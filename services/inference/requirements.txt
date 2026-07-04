@@ -1,2 +1,4 @@
 fastapi==0.125.0
+phonemizer==3.3.0
+piper-tts==1.4.2
 uvicorn[standard]==0.38.0

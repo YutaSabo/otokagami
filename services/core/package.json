@@ -1,0 +1,16 @@
+{
+  "name": "@pronunciation-mirror/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test .test-build/tests/*.test.js",
+    "build": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.0",
+    "typescript": "6.0.3"
+  }
+}

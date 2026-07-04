@@ -71,6 +71,29 @@ curl http://localhost:3000/api/health
 curl http://localhost:8000/internal/health
 ```
 
+## Supabase Local
+
+This project uses non-default local Supabase ports so it can run beside another local Supabase project:
+
+```text
+API:    http://127.0.0.1:55321
+DB:     127.0.0.1:55322
+Studio: http://127.0.0.1:55323
+Mail:   http://127.0.0.1:55324
+```
+
+Rebuild the local database from migrations and seed:
+
+```bash
+supabase db reset
+```
+
+Run the Phase 2 RLS test SQL through the local Postgres container:
+
+```bash
+docker exec -i supabase_db_pronunciation-mirror psql -U postgres -d postgres < supabase/tests/rls.sql
+```
+
 ## Environment Rules
 
 Only `EXPO_PUBLIC_*` values are available to the mobile bundle. Server-only keys such as `AZURE_SPEECH_KEY`, `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH_TOKEN`, and `PYTHON_SERVICE_API_KEY` must remain outside Expo public variables.

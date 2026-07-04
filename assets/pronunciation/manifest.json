@@ -1,0 +1,80 @@
+{
+  "generated_by": "scripts/generate-phase4-content.mjs",
+  "assets": {
+    "asset_pair_r_to_l": {
+      "path": "assets/pronunciation/pairs/r_to_l.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_l_to_r": {
+      "path": "assets/pronunciation/pairs/l_to_r.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_theta_to_s": {
+      "path": "assets/pronunciation/pairs/theta_to_s.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_theta_to_t": {
+      "path": "assets/pronunciation/pairs/theta_to_t.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_dh_to_z": {
+      "path": "assets/pronunciation/pairs/dh_to_z.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_dh_to_d": {
+      "path": "assets/pronunciation/pairs/dh_to_d.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_v_to_b": {
+      "path": "assets/pronunciation/pairs/v_to_b.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_ae_to_eh": {
+      "path": "assets/pronunciation/pairs/ae_to_eh.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_ih_to_iy": {
+      "path": "assets/pronunciation/pairs/ih_to_iy.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_pair_uh_to_uw": {
+      "path": "assets/pronunciation/pairs/uh_to_uw.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_generic_final_consonant": {
+      "path": "assets/pronunciation/generic/final_consonant.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_generic_consonant": {
+      "path": "assets/pronunciation/generic/consonant.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_generic_vowel": {
+      "path": "assets/pronunciation/generic/vowel.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_generic_cluster": {
+      "path": "assets/pronunciation/generic/cluster.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    },
+    "asset_generic_unknown": {
+      "path": "assets/pronunciation/generic/unknown.svg",
+      "status": "static_placeholder",
+      "review_required": true
+    }
+  }
+}

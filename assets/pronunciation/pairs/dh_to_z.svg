@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">pair dh to z</title>
+  <desc id="desc">Static pronunciation placement diagram placeholder for asset_pair_dh_to_z.</desc>
+  <rect width="640" height="360" fill="#f7f7f2"/>
+  <path d="M110 210 C180 130 310 120 420 160 C500 190 540 240 530 285" fill="none" stroke="#1d3557" stroke-width="10" stroke-linecap="round"/>
+  <path d="M180 235 C250 215 335 220 420 255" fill="none" stroke="#e76f51" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="240" cy="154" r="18" fill="#2a9d8f"/>
+  <line x1="240" y1="154" x2="320" y2="105" stroke="#2a9d8f" stroke-width="6" stroke-linecap="round"/>
+  <text x="320" y="58" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111827">pair dh to z</text>
+  <text x="320" y="326" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#374151">review before enabling in app</text>
+</svg>
