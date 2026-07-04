@@ -1,0 +1,19 @@
+{
+  "name": "pronunciation-mirror",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm --workspace @pronunciation-mirror/mobile run start",
+    "dev:api": "npm --workspace @pronunciation-mirror/api run dev",
+    "dev:inference": "npm --workspace @pronunciation-mirror/inference run dev",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run lint && npm run test && npm run build"
+  }
+}

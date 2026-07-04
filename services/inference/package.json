@@ -1,0 +1,11 @@
+{
+  "name": "@pronunciation-mirror/inference",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": ".venv/bin/python -m uvicorn pronunciation_mirror_inference.main:app --app-dir src --host 127.0.0.1 --port 8000 --reload",
+    "lint": "python3 -m compileall src tests",
+    "test": "python3 -m unittest discover -s tests",
+    "build": "python3 -m compileall src"
+  }
+}

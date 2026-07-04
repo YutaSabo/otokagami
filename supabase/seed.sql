@@ -1,0 +1,1 @@
+-- Phase 1 placeholder. Schema and seed data are implemented in Phase 2.
