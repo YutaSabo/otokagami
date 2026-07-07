@@ -424,7 +424,7 @@ class PiperTtsProvider:
           text=True,
           check=True,
           capture_output=True,
-          timeout=30,
+          timeout=90,
         )
       except Exception:
         raise_api_error(502, "TTS_FAILED", "Piper TTS generation failed.", retryable=True)
