@@ -454,6 +454,11 @@ def health(_auth: Annotated[None, Depends(require_internal_api_key)]) -> dict[st
   return {"ok": True, "data": {"service": "inference", "status": "ok"}}
 
 
+@app.get("/healthz", response_model=ApiResponse, response_model_exclude_none=True)
+def public_health() -> dict[str, Any]:
+  return {"ok": True, "data": {"service": "inference", "status": "ok"}}
+
+
 @app.post("/internal/ipa", response_model=ApiResponse, response_model_exclude_none=True)
 def ipa(
   request: IpaRequest,

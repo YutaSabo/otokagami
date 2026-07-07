@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: otokagami-inference-staging
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./services/inference/Dockerfile
+    dockerContext: ./services/inference
+    healthCheckPath: /healthz
+    envVars:
+      - key: PIPER_VOICE_US
+        value: en_US-lessac-medium
+      - key: PIPER_VOICE_DIR
+        value: /opt/piper/voices/en_US-lessac-medium
+      - key: PYTHON_SERVICE_API_KEY
+        sync: false
