@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { ApiError, ok, readJson } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TTS_CACHE_DIR = path.resolve(__dirname, "../.cache/tts");
+const TTS_CACHE_DIR = path.join(tmpdir(), "pronunciation-mirror-tts");
 
 export function normalizeTtsText(text) {
   return String(text ?? "")
