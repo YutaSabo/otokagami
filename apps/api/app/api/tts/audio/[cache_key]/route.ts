@@ -1,4 +1,4 @@
-import { getCachedTtsAudio } from "../../../../../lib/tts.mjs";
+import { getCachedOrRegeneratedTtsAudio } from "../../../../../lib/tts.mjs";
 import { route } from "../../../../../lib/http.mjs";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(
   return route(async () => {
     const params = await context.params;
     const cacheKey = params.cache_key.endsWith(".wav") ? params.cache_key.slice(0, -4) : params.cache_key;
-    const audio = await getCachedTtsAudio(cacheKey);
+    const audio = await getCachedOrRegeneratedTtsAudio({ cacheKey });
 
     return new Response(audio, {
       headers: {

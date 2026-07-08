@@ -3,8 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { getApiEnv } from "./env.mjs";
 import { ApiError, ok, readJson } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
+import { createSupabaseRestClient } from "./supabase-rest.mjs";
 
 const TTS_CACHE_DIR = path.join(tmpdir(), "pronunciation-mirror-tts");
 
@@ -36,6 +38,73 @@ export function ttsCacheFilePath(cacheKey) {
 
 export async function getCachedTtsAudio(cacheKey, readFileImpl = readFile) {
   return readFileImpl(ttsCacheFilePath(cacheKey));
+}
+
+async function fetchTtsAudioBase64({ config, normalizedText, accent, speed, fetchImpl }) {
+  if (!config.pythonServiceUrl || !config.pythonServiceApiKey) {
+    throw new ApiError("TTS_SERVICE_UNCONFIGURED", "TTSサービスが未設定です。", 500, false);
+  }
+
+  const response = await fetchImpl(`${config.pythonServiceUrl.replace(/\/$/, "")}/internal/tts`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-api-key": config.pythonServiceApiKey
+    },
+    body: JSON.stringify({ text: normalizedText, accent, speed })
+  });
+
+  if (!response.ok) {
+    throw new ApiError("TTS_GENERATION_FAILED", "お手本音声の生成に失敗しました。", 502, true);
+  }
+
+  const payload = await response.json();
+  if (!payload?.ok || !payload.data?.audio_base64) {
+    throw new ApiError("TTS_GENERATION_FAILED", "お手本音声の生成に失敗しました。", 502, true);
+  }
+
+  return {
+    audioBase64: payload.data.audio_base64,
+    durationMs: payload.data.duration_ms ?? null
+  };
+}
+
+export async function getCachedOrRegeneratedTtsAudio({
+  cacheKey,
+  env = process.env,
+  fetchImpl = fetch,
+  now = new Date(),
+  readFileImpl = readFile,
+  writeFileImpl = writeFile,
+  mkdirImpl = mkdir
+}) {
+  try {
+    return await getCachedTtsAudio(cacheKey, readFileImpl);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  const config = getApiEnv(env);
+  const supabase = createSupabaseRestClient(config, fetchImpl);
+  const cached = await supabase.getTtsCache(cacheKey);
+  if (!cached) {
+    throw new ApiError("TTS_AUDIO_NOT_FOUND", "お手本音声が見つかりません。", 404, false);
+  }
+
+  const { audioBase64 } = await fetchTtsAudioBase64({
+    config,
+    normalizedText: cached.normalized_text,
+    accent: cached.accent,
+    speed: cached.speed,
+    fetchImpl
+  });
+  const audio = Buffer.from(audioBase64, "base64");
+
+  await mkdirImpl(TTS_CACHE_DIR, { recursive: true });
+  await writeFileImpl(ttsCacheFilePath(cacheKey), audio);
+  await supabase.touchTtsCache(cacheKey, now.toISOString());
+
+  return audio;
 }
 
 export async function getOrCreateTts({
@@ -74,30 +143,16 @@ export async function getOrCreateTts({
     };
   }
 
-  if (!config.pythonServiceUrl || !config.pythonServiceApiKey) {
-    throw new ApiError("TTS_SERVICE_UNCONFIGURED", "TTSサービスが未設定です。", 500, false);
-  }
-
-  const response = await fetchImpl(`${config.pythonServiceUrl.replace(/\/$/, "")}/internal/tts`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-internal-api-key": config.pythonServiceApiKey
-    },
-    body: JSON.stringify({ text: normalizedText, accent, speed })
+  const { audioBase64, durationMs } = await fetchTtsAudioBase64({
+    config,
+    normalizedText,
+    accent,
+    speed,
+    fetchImpl
   });
 
-  if (!response.ok) {
-    throw new ApiError("TTS_GENERATION_FAILED", "お手本音声の生成に失敗しました。", 502, true);
-  }
-
-  const payload = await response.json();
-  if (!payload?.ok || !payload.data?.audio_base64) {
-    throw new ApiError("TTS_GENERATION_FAILED", "お手本音声の生成に失敗しました。", 502, true);
-  }
-
   await mkdirImpl(TTS_CACHE_DIR, { recursive: true });
-  await writeFileImpl(ttsCacheFilePath(cacheKey), Buffer.from(payload.data.audio_base64, "base64"));
+  await writeFileImpl(ttsCacheFilePath(cacheKey), Buffer.from(audioBase64, "base64"));
 
   const storagePath = ttsStoragePath(cacheKey);
   const row = await supabase.createTtsCache({
@@ -107,7 +162,7 @@ export async function getOrCreateTts({
     accent,
     speed,
     storage_path: storagePath,
-    duration_ms: payload.data.duration_ms ?? null,
+    duration_ms: durationMs,
     last_used_at: now.toISOString()
   });
 

@@ -4,7 +4,13 @@ import test from "node:test";
 
 import { getAdvice } from "../lib/advice.mjs";
 import { createPracticeSession, getOrCreateDailySession } from "../lib/practice-session.mjs";
-import { createTts, getTtsCacheKey, normalizeTtsText, ttsStoragePath } from "../lib/tts.mjs";
+import {
+  createTts,
+  getCachedOrRegeneratedTtsAudio,
+  getTtsCacheKey,
+  normalizeTtsText,
+  ttsStoragePath
+} from "../lib/tts.mjs";
 
 const env = {
   SUPABASE_URL: "http://supabase.test",
@@ -368,6 +374,33 @@ test("tts uses cache without regenerating audio", async () => {
 
   assert.equal(tts.cached, true);
   assert.equal(fetchImpl.calls.ttsGeneration, 0);
+});
+
+test("tts audio regenerates missing tmp file from cache metadata", async () => {
+  const state = seedState();
+  const fetchImpl = createFetchMock(state);
+  const normalizedText = normalizeTtsText("right");
+  const { cacheKey } = getTtsCacheKey({ normalizedText, accent: "US", speed: "normal" });
+  let writtenAudio = null;
+
+  const audio = await getCachedOrRegeneratedTtsAudio({
+    cacheKey,
+    env,
+    fetchImpl,
+    readFileImpl: async () => {
+      const error = new Error("missing");
+      error.code = "ENOENT";
+      throw error;
+    },
+    mkdirImpl: async () => {},
+    writeFileImpl: async (_path, data) => {
+      writtenAudio = data;
+    }
+  });
+
+  assert.equal(audio.toString(), "RIFFmock");
+  assert.equal(writtenAudio.toString(), "RIFFmock");
+  assert.equal(fetchImpl.calls.ttsGeneration, 1);
 });
 
 test("advice returns active template pages without OpenAI and uses ai_advice_cache before fallback generation", async () => {
