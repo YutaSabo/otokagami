@@ -2,7 +2,7 @@
 
 ## 対象アーキテクチャ
 
-MVPは iPhone 向けの Expo React Native アプリ、Next.js API、Python推論サービス、Supabase、外部APIで構成する。
+MVPは iPhone 向けの Expo React Native アプリ、iOSネイティブ発音判定モジュール、Next.js API、Python推論サービス、Supabase、外部APIで構成する。発音判定の音声経路だけは、遅延と秘密情報保護を両立するため、バックエンド発行の短期トークンを使って端末からAzure Speechへ直接ストリーミングする。
 
 開発環境では Supabase を Docker 経由でローカル実装する。
 
@@ -33,7 +33,8 @@ supabase
 | レイヤー | 責務 |
 | --- | --- |
 | Expoアプリ | UI、録音、再生、端末ローカル録音保存、RevenueCat SDK、Supabase anonymous auth。 |
-| Next.js API | 認証検証、アクセス制御、Azure判定、OpenAI助言、RevenueCat webhook、集計更新、Supabase service role処理。 |
+| iOSネイティブ発音判定モジュール | Azure Speech SDKのRecognizer事前生成、16kHz/16bit/mono PCMのリアルタイム送信、明示的なストリーム終了、Azure JSON取得、ローカルWAV生成。 |
+| Next.js API | 認証検証、アクセス制御、Azure短期トークン発行、正規化済み判定結果の検証・保存、OpenAI助言、RevenueCat webhook、集計更新、Supabase service role処理。 |
 | Python推論サービス | IPA変換、テキスト正規化、OOV検出、Piper TTS生成。 |
 | Supabase | Auth、Postgres、RLS、Storage、ローカルDocker開発。 |
 | Azure | 発音評価。 |
@@ -54,8 +55,8 @@ supabase
 - Supabase anonymous authでログイン。
 - `EXPO_PUBLIC_SUPABASE_URL` と `EXPO_PUBLIC_SUPABASE_ANON_KEY` でSupabaseに接続。
 - RevenueCat public SDK keyで購読状態を取得。
-- 録音する。
-- 判定APIへ音声を送る。
+- 問題表示時に短期トークンを取得してRecognizerを準備する。
+- 録音開始からAzureへPCMを直接ストリーミングし、判定終了後に正規化済み結果だけをAPIへ送る。
 - お手本音声とユーザー録音を再生する。
 - 端末ローカルにユーザー録音を保存する。
 - iOSローカル通知をスケジュールする。
@@ -67,8 +68,8 @@ supabase
 
 - Supabase JWTを検証する。
 - 7日無料期間とRevenueCat購読状態を判定する。
-- Azure発音評価APIへ音声を一時送信する。
-- Azureレスポンスを正規化する。
+- Subscription Keyを使ってAzure短期トークンを発行し、キー自体は返さない。
+- クライアントが送るAzure結果を共通形式へ正規化・検証する。
 - `attempts`、`attempt_phoneme_results`、`phoneme_state` などを更新する。
 - Python推論サービスを呼ぶ。
 - OpenAI APIを呼ぶ。
@@ -170,6 +171,8 @@ Codexは実際のキーの値を要求・出力・コミットしない。
 以下は絶対に `EXPO_PUBLIC_` にしてはならない。
 
 - `AZURE_SPEECH_KEY`
+- `AZURE_SPEECH_REGION`
+- `AZURE_SPEECH_LOCALE`（標準`en-US`）
 - `OPENAI_API_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `REVENUECAT_SECRET_KEY`
@@ -197,9 +200,18 @@ Codexは実際のキーの値を要求・出力・コミットしない。
 
 ## 録音形式
 
-アプリ側録音はWAV/PCM 16kHzを目標とする。端末都合で別形式になる場合は、Next.js APIまたはPython側でAzure投入前に変換する。
+iOSネイティブモジュールはマイク入力を16kHz、16bit、monoのリトルエンディアンPCMへ変換し、ヘッダーなしPCMをAzure Speech SDKのpush streamへ録音中に書き込む。同じPCMから端末ローカル再生用WAVを生成する。M4A生成、録音完了待ち、WAVへの後変換、バックエンドへの音声アップロードは行わない。
 
-MediaRecorder系のwebm/opus前提にはしない。iPhoneアプリの録音実装に合わせる。
+Android/Webではネイティブモジュールを読み込まず、対応外を明示する。iOS専用コードが他プラットフォームの型チェックを壊さない構成にする。
+
+## 発音判定のライフサイクル
+
+1. 問題表示時に `POST /api/speech-token` を呼び、期限、リージョン、ロケール、capabilitiesを取得する。
+2. iOSネイティブモジュールでSpeech RecognizerとPronunciation Assessment設定を準備する。
+3. 録音開始と同時にPCMをAzureへリアルタイム送信する。
+4. 「判定する」でpush streamを閉じ、Azure最終結果を待つ。
+5. アプリはAzure結果JSONだけを`POST /api/assess`へ送り、APIが共通形式への正規化と保存を行う。応答後に初期結果を描画し、正規化・保存時間は個別計測する。音声転送や音声変換はこの経路に含めない。
+6. トークンは発行から10分で失効するため、録音開始時点で残存時間が120秒未満なら更新する。
 
 ## 音声保存
 

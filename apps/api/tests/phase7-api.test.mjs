@@ -315,7 +315,8 @@ test("practice-session weak drill prioritizes weak phonemes and phoneme_select r
       body: { mode: "weak_drill", session_date: "2026-07-04", timezone: "Asia/Tokyo", limit: 3 }
     }),
     env,
-    fetchImpl
+    fetchImpl,
+    now: new Date("2026-07-04T01:00:00.000Z")
   });
 
   assert.equal(weak.mode, "weak_drill");
@@ -327,7 +328,8 @@ test("practice-session weak drill prioritizes weak phonemes and phoneme_select r
       body: { mode: "phoneme_select", phoneme_id: "theta", session_date: "2026-07-04", limit: 2 }
     }),
     env,
-    fetchImpl
+    fetchImpl,
+    now: new Date("2026-07-04T01:00:00.000Z")
   });
 
   assert.ok(selected.items.every((practiceItem) => practiceItem.target_phoneme_ids.includes("theta")));
@@ -338,7 +340,8 @@ test("practice-session weak drill prioritizes weak phonemes and phoneme_select r
         body: { mode: "phoneme_select", session_date: "2026-07-04" }
       }),
       env,
-      fetchImpl
+      fetchImpl,
+      now: new Date("2026-07-04T01:00:00.000Z")
     }),
     /phoneme_id が必要です。/
   );
@@ -369,7 +372,8 @@ test("tts uses cache without regenerating audio", async () => {
       body: { text: "right", accent: "US", speed: "normal" }
     }),
     env,
-    fetchImpl
+    fetchImpl,
+    now: new Date("2026-07-04T01:00:00.000Z")
   });
 
   assert.equal(tts.cached, true);
@@ -425,6 +429,7 @@ test("advice returns active template pages without OpenAI and uses ai_advice_cac
     request: apiRequest("/api/advice/r_to_l?expected_phoneme_id=r&observed_phoneme_id=l", { method: "GET" }),
     adviceId: "r_to_l",
     env,
+    now: new Date("2026-07-04T01:00:00.000Z"),
     fetchImpl: createFetchMock(cachedState),
     openAiImpl: async () => {
       openAiCalls += 1;
@@ -442,6 +447,7 @@ test("advice returns active template pages without OpenAI and uses ai_advice_cac
     request: apiRequest("/api/advice/generic_consonant?expected_phoneme_id=theta&observed_phoneme_id=s", { method: "GET" }),
     adviceId: "generic_consonant",
     env,
+    now: new Date("2026-07-04T01:00:00.000Z"),
     fetchImpl: createFetchMock(cachedState),
     openAiImpl: async () => {
       openAiCalls += 1;
@@ -457,6 +463,7 @@ test("advice returns active template pages without OpenAI and uses ai_advice_cac
     request: apiRequest("/api/advice/generic_consonant?expected_phoneme_id=theta&observed_phoneme_id=t", { method: "GET" }),
     adviceId: "generic_consonant",
     env,
+    now: new Date("2026-07-04T01:00:00.000Z"),
     fetchImpl: createFetchMock(missState),
     openAiImpl: async () => {
       openAiCalls += 1;

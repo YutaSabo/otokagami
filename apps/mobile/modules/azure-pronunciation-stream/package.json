@@ -1,0 +1,10 @@
+{
+  "name": "azure-pronunciation-stream",
+  "version": "0.1.1",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "expo": "*",
+    "react-native": "*"
+  }
+}

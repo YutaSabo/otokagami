@@ -103,7 +103,7 @@ test("bootstrap creates and then reuses profile and installation without storing
   });
 
   assert.equal(first.profile.user_id, userIdRef.current);
-  assert.equal(first.profile.native_language, "ja");
+  assert.equal(first.profile.native_language, "und");
   assert.equal(first.profile.target_accent, "US");
   assert.equal(first.profile.free_trial_started_at, firstSeenAt.toISOString());
   assert.equal(state.profiles.length, 1);

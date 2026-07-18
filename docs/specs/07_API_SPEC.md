@@ -7,8 +7,8 @@
 ## 基本方針
 
 - Expoアプリはサーバー専用キーを持たない。
-- Azure、OpenAI、Supabase service role、RevenueCat secret はNext.js APIまたはサーバー側処理のみで使う。
-- Azure判定は必ずバックエンド経由にする。
+- Azure Subscription Key、OpenAI、Supabase service role、RevenueCat secret はNext.js APIまたはサーバー側処理のみで使う。
+- Azure発音判定の音声は、バックエンド発行の短期トークンを使い、iPhoneからAzureへ直接ストリーミングする。
 - Python推論サービスは IPA変換、phonemizer/eSpeak NG、Piper TTS を担当する。
 - Supabaseのユーザー所有データは `auth.uid()` とRLSを基本にする。
 - 集計更新のような不整合が困る処理はサーバーAPIで行う。
@@ -19,8 +19,8 @@
 Expo iPhone App
   -> Supabase Auth / RLS read
   -> Next.js API
+      -> Azure token issuance endpoint
       -> Supabase service role
-      -> Azure Pronunciation Assessment
       -> OpenAI API
       -> RevenueCat API/Webhook
       -> Python Inference Service
@@ -220,17 +220,50 @@ Response:
 }
 ```
 
+### POST `/api/speech-token`
+
+認証済みかつ練習権限のあるユーザーへAzure Speech短期トークンを返す。Subscription Keyはレスポンス、ログ、クライアントバンドルへ含めない。
+
+Request:
+
+```json
+{ "locale": "en-US" }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "token": "short-lived-token",
+    "region": "japaneast",
+    "locale": "en-US",
+    "issued_at": "2026-07-12T00:00:00.000Z",
+    "expires_at": "2026-07-12T00:10:00.000Z",
+    "refresh_after": "2026-07-12T00:08:00.000Z",
+    "capabilities": {
+      "phonemeScores": true,
+      "ipaPhonemeNames": true,
+      "spokenPhonemeCandidates": true,
+      "syllables": true,
+      "prosody": true,
+      "miscue": true
+    }
+  }
+}
+```
+
 ### POST `/api/assess`
 
-パック問題の録音を判定し、attempt保存、best attempt更新、集計更新を行う。
-
-Content-Typeは `multipart/form-data` を想定する。
+端末がAzureから受信した判定結果を検証・正規化し、attempt保存、best attempt更新、集計更新を行う。音声は受け取らない。Content-Typeは `application/json` とする。
 
 Fields:
 
 | フィールド | 内容 |
 | --- | --- |
-| `audio` | WAV/PCM 16kHz推奨。 |
+| `azure_result` | Speech SDKの最終JSON。 |
+| `client_timing` | 音声内容を含まない性能計測値。 |
 | `practice_item_id` | 問題ID。 |
 | `practice_mode` | `daily`、`weak_drill`、`phoneme_select`。 |
 | `daily_session_id` | デイリー時のみ。 |
@@ -244,8 +277,8 @@ Fields:
 
 1. JWTを検証する。
 2. アクセス権を確認する。
-3. 音声をAzureへ一時送信する。
-4. Azureレスポンスを `phoneme_results` に正規化する。
+3. Azure結果のサイズと型、問題IDから解決した参照テキスト、ロケールを検証する。
+4. Azureレスポンスをアプリ共通の `pronunciation_assessment` と互換用 `phoneme_results` に正規化する。
 5. `attempts` と `attempt_phoneme_results` を保存する。
 6. 同一問題内のbest attemptを再計算する。
 7. best attemptが変わった場合、`phoneme_state`、`phoneme_snapshots`、バッジを更新する。
@@ -263,6 +296,16 @@ Response:
     "target_score_avg": 78.0,
     "is_correct": false,
     "is_perfect": false,
+    "pronunciation_assessment": {
+      "provider": "azure",
+      "locale": "en-US",
+      "referenceText": "right",
+      "timing": {},
+      "capabilities": {},
+      "overall": {},
+      "issues": {},
+      "words": []
+    },
     "phoneme_results": [
       {
         "index": 0,
@@ -278,7 +321,7 @@ Response:
       }
     ],
     "next": {
-      "recommended_advice_id": "advice_r_to_l_ja_us"
+      "recommended_advice_id": "r_to_l"
     },
     "earned_badges": []
   }
@@ -291,14 +334,16 @@ Pro自由入力を判定し、`free_attempts` に保存する。
 
 パック集計は更新しない。
 
-Requestは `multipart/form-data`。
+Requestは `application/json`。音声本体は送らず、iPhoneがAzure Speech SDKから受け取った結果だけを送る。
 
 Fields:
 
 | フィールド | 内容 |
 | --- | --- |
 | `text` | 入力文。 |
-| `audio` | 録音音声。 |
+| `azure_result` | Azure Speech SDKの詳細結果JSON。 |
+| `client_timing` | 認識遅延などの個人情報を含まない性能計測値。 |
+| `locale` | 判定ロケール。MVPは`en-US`。 |
 | `timezone` | IANA timezone。 |
 | `attempted_date` | 端末ローカル日付。 |
 | `consent_version` | 自由入力保存同意の版。 |
@@ -573,8 +618,9 @@ Response:
 
 ### 入力音声
 
-- WAV/PCM 16kHzを推奨する。
-- アプリ側で録音形式が異なる場合は、サーバー側またはAPI層で変換する。
+- iOS側で16kHz、16bit、mono PCMをAzure Speech SDKへ録音中にpushする。
+- `HundredMark`、`Phoneme`、`IPA`、`NBestPhonemeCount = 5`、miscue、prosodyを標準設定とする。
+- `en-US`以外ではロケール別capabilitiesを参照し、取得不能値を0や空文字で補わない。
 
 ### 保存
 
@@ -582,12 +628,12 @@ Response:
 
 - 音声本体を除くAzure JSONレスポンス全文。
 - 正規化済み音素結果。
-- overall、target平均、正解フラグ。
+- 共通形式のoverall、issues、words、timing、capabilities、target平均、正解フラグ。
 
 保存しない:
 
 - 音声ファイル。
-- Azureに送信した一時音声の永続コピー。
+- Azureへストリーミングした音声のサーバーコピー。
 
 ## RevenueCat連携
 

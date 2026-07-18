@@ -175,6 +175,59 @@ export async function getOrCreateTts({
   };
 }
 
+export async function getOrCreateTtsReference({
+  supabase,
+  text,
+  accent = "US",
+  speed = "normal",
+  now = new Date()
+}) {
+  if (accent !== "US") {
+    throw new ApiError("UNSUPPORTED_ACCENT", "USアクセントのみ対応しています。", 400, false);
+  }
+  if (!["normal", "slow"].includes(speed)) {
+    throw new ApiError("INVALID_SPEED", "speed は normal または slow を指定してください。", 400, false);
+  }
+
+  const normalizedText = normalizeTtsText(text);
+  if (!normalizedText) {
+    throw new ApiError("BAD_REQUEST", "text が不正です。", 400, false);
+  }
+
+  const { textHash, cacheKey } = getTtsCacheKey({ normalizedText, accent, speed });
+  const cached = await supabase.getTtsCache(cacheKey);
+  if (cached) {
+    await supabase.touchTtsCache(cacheKey, now.toISOString());
+    return {
+      cache_key: cacheKey,
+      audio_url: cached.storage_path,
+      storage_path: cached.storage_path,
+      duration_ms: cached.duration_ms,
+      cached: true
+    };
+  }
+
+  const storagePath = ttsStoragePath(cacheKey);
+  const row = await supabase.createTtsCache({
+    cache_key: cacheKey,
+    text_hash: textHash,
+    normalized_text: normalizedText,
+    accent,
+    speed,
+    storage_path: storagePath,
+    duration_ms: null,
+    last_used_at: now.toISOString()
+  });
+
+  return {
+    cache_key: cacheKey,
+    audio_url: row.storage_path,
+    storage_path: row.storage_path,
+    duration_ms: row.duration_ms,
+    cached: false
+  };
+}
+
 export async function createTts({
   request,
   env = process.env,

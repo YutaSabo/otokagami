@@ -5,7 +5,7 @@
 - ユーザーが「Phase 8 の指示書をもとに作業してください」と指示したら、この指示書を根拠に開発を開始する。
 - この指示書に書かれた内容がすべて完了したら、Phase 8 は完了とし、作業を終了する。勝手に Phase 9 へ進まない。
 - 次の Phase は、ユーザーが改めて実行を依頼したときに開始する。
-- 音声はAzure判定のため一時送信するだけで、サーバーやSupabase Storageに保存しない。
+- 音声はiPhoneからAzureへ直接ストリーミングし、自社サーバーやSupabase Storageへ送信・保存しない。
 - 実際のAPIキー、トークン、秘密鍵、service role keyをチャットやコミットに出さない。
 
 ## ゴール
@@ -50,7 +50,7 @@
 ## 作業タスクリスト
 
 1. `/api/assess` の入力処理を実装
-   - `multipart/form-data` を受け取る。
+   - `application/json`でAzure結果、ロケール、端末計測値を受け取る。
    - fields:
      - `audio`
      - `practice_item_id`
@@ -69,7 +69,7 @@
    - JWT不正は `UNAUTHORIZED`。
 
 3. Azure連携を実装
-   - 音声はAzureへ一時送信する。
+   - 音声は受信せず、端末からAzureへ直接ストリーミング済みの結果だけを検証・保存する。
    - サーバー、DB、Supabase Storageにユーザー音声を保存しない。
    - 保存するのは音声本体を除くAzure JSON、正規化済み音素結果、スコア、フラグのみ。
    - ローカルテストではAzureモックを使えるようにする。

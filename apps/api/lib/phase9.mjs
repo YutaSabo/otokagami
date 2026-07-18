@@ -4,6 +4,8 @@ import {
   normalizeAzurePhonemeResults,
   summarizeAttempt
 } from "./assess.mjs";
+import { normalizePronunciationAssessment, sanitizePerformanceTiming } from "./pronunciation-result.mjs";
+import { capabilitiesForLocale } from "./speech-token.mjs";
 import { getApiEnv } from "./env.mjs";
 import { ApiError, getBearerToken, ok, readJson } from "./http.mjs";
 import { createSupabaseRestClient } from "./supabase-rest.mjs";
@@ -139,31 +141,33 @@ function titleFor({ streak, completedItems, states, attempts }) {
 }
 
 async function readFreeAssessInput(request) {
-  let formData;
+  if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
+    throw new ApiError("UNSUPPORTED_MEDIA_TYPE", "application/json が必要です。", 415, false);
+  }
+  let body;
   try {
-    formData = await request.formData();
+    body = await request.json();
   } catch {
-    throw new ApiError("BAD_REQUEST", "multipart/form-data が不正です。", 400, false);
+    throw new ApiError("BAD_REQUEST", "JSON本文が不正です。", 400, false);
   }
-
-  const audio = formData.get("audio");
-  if (!audio || typeof audio.arrayBuffer !== "function") {
-    throw new ApiError("BAD_REQUEST", "audio が必要です。", 400, false);
+  if (!body?.azure_result || typeof body.azure_result !== "object" || Array.isArray(body.azure_result)) {
+    throw new ApiError("BAD_REQUEST", "azure_result が必要です。", 400, false);
   }
-
-  const audioBuffer = Buffer.from(await audio.arrayBuffer());
-  if (audioBuffer.length === 0) {
-    throw new ApiError("BAD_REQUEST", "audio が空です。", 400, false);
+  if (JSON.stringify(body.azure_result).length > 1_000_000) {
+    throw new ApiError("BAD_REQUEST", "azure_result が大きすぎます。", 413, false);
   }
+  const locale = typeof body.locale === "string" ? body.locale : "en-US";
+  if (!capabilitiesForLocale(locale)) throw new ApiError("UNSUPPORTED_LOCALE", "この発音判定ロケールには対応していません。", 400, false);
 
   return {
-    text: requiredString(formData.get("text"), "text"),
-    audioBuffer,
-    audioContentType: audio.type || "audio/wav; codecs=audio/pcm; samplerate=16000",
-    timezone: requiredString(formData.get("timezone") ?? "Asia/Tokyo", "timezone"),
-    attemptedDate: assertDateOnly(requiredString(formData.get("attempted_date"), "attempted_date"), "attempted_date"),
-    consentVersion: requiredString(formData.get("consent_version"), "consent_version"),
-    appVersion: typeof formData.get("app_version") === "string" ? formData.get("app_version").trim() || null : null
+    text: requiredString(body.text, "text"),
+    azureRawJson: body.azure_result,
+    clientTiming: sanitizePerformanceTiming(body.client_timing),
+    locale,
+    timezone: requiredString(body.timezone ?? "Asia/Tokyo", "timezone"),
+    attemptedDate: assertDateOnly(requiredString(body.attempted_date, "attempted_date"), "attempted_date"),
+    consentVersion: requiredString(body.consent_version, "consent_version"),
+    appVersion: typeof body.app_version === "string" ? body.app_version.trim() || null : null
   };
 }
 
@@ -240,23 +244,35 @@ export async function assessFreeText({
   fetchImpl = fetch,
   now = new Date(),
   ipaConversionImpl = defaultIpaConversion,
-  azureAssessImpl = defaultAzureAssessment
+  azureAssessImpl = defaultAzureAssessment,
+  timing = null
 }) {
-  const input = await readFreeAssessInput(request);
-  const { config, supabase, user, profile, access } = await getAuthenticatedContext({ request, env, fetchImpl, now });
+  const startedAt = performance.now();
+  const [input, { config, supabase, user, profile, access }] = await Promise.all([
+    readFreeAssessInput(request),
+    getAuthenticatedContext({ request, env, fetchImpl, now })
+  ]);
+  if (timing) {
+    timing.input_and_auth_ms = Math.round(performance.now() - startedAt);
+    timing.result_json_bytes = JSON.stringify(input.azureRawJson).length;
+  }
   requirePro(access);
 
   if (!profile.free_text_consented_at || profile.free_text_consent_version !== input.consentVersion) {
     throw new ApiError("FREE_TEXT_CONSENT_REQUIRED", "自由入力保存同意が必要です。", 403, false);
   }
 
+  const preflightStartedAt = performance.now();
   const softCap = Number.isFinite(config.freeTextDailySoftCap) && config.freeTextDailySoftCap > 0 ? config.freeTextDailySoftCap : 20;
   const usedToday = (await supabase.listFreeAttemptsByDate(user.id, input.attemptedDate)).length;
   if (usedToday >= softCap) {
     throw new ApiError("RATE_LIMITED", "今日はこれ以上利用できません。明日また試してください。", 429, false);
   }
+  if (timing) timing.preflight_ms = Math.round(performance.now() - preflightStartedAt);
 
+  const ipaStartedAt = performance.now();
   const ipaResult = await ipaConversionImpl({ config, text: input.text, fetchImpl });
+  if (timing) timing.ipa_conversion_ms = Math.round(performance.now() - ipaStartedAt);
   const activePhonemes = await supabase.listActivePhonemes();
   const targetPhonemeIds = freeTargetPhonemeIds(ipaResult, activePhonemes);
   const practiceItem = {
@@ -264,9 +280,21 @@ export async function assessFreeText({
     normalized_text: ipaResult.normalized_text,
     expected_ipa: ipaResult.ipa ?? null
   };
+  const assessmentStartedAt = performance.now();
   const azureRawJson = await azureAssessImpl({ config, input, practiceItem, targetPhonemeIds, fetchImpl });
+  if (timing) timing.speech_assessment_ms = Math.round(performance.now() - assessmentStartedAt);
+  const normalizationStartedAt = performance.now();
   const phonemeResults = normalizeAzurePhonemeResults({ azureRawJson, targetPhonemeIds });
   const summary = summarizeAttempt(phonemeResults);
+  const normalizedResult = normalizePronunciationAssessment({
+    azureRawJson,
+    locale: input.locale,
+    referenceText: input.text,
+    capabilities: capabilitiesForLocale(input.locale),
+    timing: input.clientTiming
+  });
+  if (timing) timing.normalization_ms = Math.round(performance.now() - normalizationStartedAt);
+  const persistenceStartedAt = performance.now();
 
   const freeAttempt = await supabase.createFreeAttempt({
     user_id: user.id,
@@ -282,18 +310,25 @@ export async function assessFreeText({
     word_scores: azureRawJson.word_scores ?? azureRawJson.wordScores ?? null,
     overall_score: summary.overallScore,
     azure_raw_json: azureRawJson,
-    native_language: profile.native_language ?? "ja",
+    normalized_result: normalizedResult,
+    performance_metrics: input.clientTiming,
+    native_language: profile.native_language ?? "und",
     target_accent: profile.target_accent ?? "US",
     pii_flag: false,
     consent_version: input.consentVersion,
     app_version: input.appVersion
   });
+  if (timing) {
+    timing.persistence_ms = Math.round(performance.now() - persistenceStartedAt);
+    timing.total_ms = Math.round(performance.now() - startedAt);
+  }
 
   return {
     free_attempt_id: freeAttempt.id,
     overall_score: summary.overallScore,
     ipa_result: ipaResult,
     phoneme_scores: freeAttempt.phoneme_scores,
+    pronunciation_assessment: normalizedResult,
     limit: {
       used_today: usedToday + 1,
       soft_cap: softCap

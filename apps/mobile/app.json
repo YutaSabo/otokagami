@@ -1,19 +1,57 @@
 {
   "expo": {
     "name": "Pronunciation Mirror",
-    "slug": "pronunciation-mirror",
+    "slug": "otokagami",
     "scheme": "pronunciationmirror",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "portrait",
     "platforms": [
       "ios"
     ],
     "ios": {
-      "bundleIdentifier": "com.pronunciationmirror.app",
-      "supportsTablet": false
+      "bundleIdentifier": "com.yutahemmi.otokagami",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Pronunciation Mirror uses the microphone to assess your pronunciation practice.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "plugins": [
-      "expo-dev-client"
-    ]
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent",
+          "defaultLaunchURL": "http://127.0.0.1:8081",
+          "skipOnboarding": true,
+          "showMenuAtLaunch": false
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Pronunciation Mirror uses the microphone to assess your pronunciation practice."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c4f399f5-6039-45d9-aec0-1c72629ec47a"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c4f399f5-6039-45d9-aec0-1c72629ec47a"
+    },
+    "owner": "yutasabos-team"
   }
 }

@@ -1,15 +1,16 @@
 export class ApiError extends Error {
-  constructor(code, message, status = 500, retryable = false) {
+  constructor(code, message, status = 500, retryable = false, details = null) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.retryable = retryable;
+    this.details = details;
   }
 }
 
 export function ok(data, init = {}) {
-  return Response.json({ ok: true, data }, { status: init.status ?? 200 });
+  return Response.json({ ok: true, data }, { status: init.status ?? 200, headers: init.headers });
 }
 
 export function fail(error) {

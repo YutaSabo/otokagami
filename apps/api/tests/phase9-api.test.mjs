@@ -121,18 +121,22 @@ function jsonRequest(path, body, method = "POST") {
 }
 
 function freeAssessRequest(overrides = {}) {
-  const form = new FormData();
-  form.set("text", overrides.text ?? "Read it again.");
-  form.set("audio", new Blob([Buffer.from("RIFFmock-user-audio")], { type: "audio/wav" }), "audio.wav");
-  form.set("timezone", "Asia/Tokyo");
-  form.set("attempted_date", overrides.attempted_date ?? "2026-07-04");
-  form.set("consent_version", overrides.consent_version ?? "free_text_ja_v1");
-  form.set("app_version", "1.0.0");
-
   return new Request("http://api.test/api/free-assess", {
     method: "POST",
-    headers: { authorization: "Bearer valid-token" },
-    body: form
+    headers: { authorization: "Bearer valid-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      text: overrides.text ?? "Read it again.",
+      azure_result: overrides.azure_result ?? {
+        NBest: [{ PronunciationAssessment: { PronScore: 88 }, Words: [] }],
+        phoneme_results: [{ index: 0, word_index: 0, expected_phoneme_id: "r", expected_ipa: "r", observed_phoneme_id: "r", observed_ipa: "r", score: 88 }]
+      },
+      client_timing: { recognitionLatencyMs: 250 },
+      locale: "en-US",
+      timezone: "Asia/Tokyo",
+      attempted_date: overrides.attempted_date ?? "2026-07-04",
+      consent_version: overrides.consent_version ?? "free_text_ja_v1",
+      app_version: "1.0.0"
+    })
   });
 }
 
