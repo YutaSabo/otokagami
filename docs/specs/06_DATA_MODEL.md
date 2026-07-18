@@ -54,7 +54,7 @@ MVPで必要なPostgres拡張:
 | --- | --- | --- | --- |
 | `user_id` | uuid | yes | `auth.users.id`。主キー。 |
 | `anon_public_id` | text | yes | ランキング等の将来表示用匿名ID。unique。 |
-| `native_language` | text | yes | MVPは `ja`。 |
+| `native_language` | text | yes | BCP 47系コード。既定は未指定を表す`und`。判定スコア補正には使わない。 |
 | `target_accent` | text | yes | MVPは `US`。 |
 | `free_trial_started_at` | timestamptz | yes | サーバー側無料期間起点。 |
 | `timezone` | text | yes | 端末のIANA timezone。 |
@@ -69,7 +69,7 @@ MVPで必要なPostgres拡張:
 
 制約:
 
-- `native_language in ('ja')` をMVPでは許可する。将来拡張時に増やす。
+- `native_language` は`und`または妥当な言語タグを許可する。国籍は保存せず、判定スコア補正にも使わない。
 - `target_accent in ('US', 'UK')` とし、MVPではアプリ側でUKを無効化する。
 
 ## installations
@@ -242,6 +242,8 @@ daily_session内の各問題。
 | `is_perfect` | boolean | yes | 全音素80以上。 |
 | `is_best` | boolean | yes | 集計対象best attemptか。 |
 | `azure_raw_json` | jsonb | yes | 音声本体を除くAzure JSON。 |
+| `normalized_result` | jsonb | yes | provider、locale、timing、capabilities、overall、issues、wordsを持つアプリ共通形式。未提供値はnull。 |
+| `performance_metrics` | jsonb | no | tokenFetchMs、recognizerPreparationMs、buttonToAzureResultMs、normalizationMs、buttonToUiMs。 |
 | `app_version` | text | no | アプリバージョン。 |
 | `device_info` | jsonb | no | 端末/OS情報。 |
 | `created_at` | timestamptz | yes | 作成日時。 |
@@ -356,6 +358,8 @@ attempt内の音素別結果。
 | `word_scores` | jsonb | no | 単語ごとスコア。 |
 | `overall_score` | numeric | no | 任意。 |
 | `azure_raw_json` | jsonb | yes | 音声本体を除くAzure JSON。 |
+| `normalized_result` | jsonb | yes | Azure固有構造から分離したアプリ共通形式。 |
+| `performance_metrics` | jsonb | no | 個人情報・音声内容を含まない性能計測値。 |
 | `native_language` | text | yes | `ja`。 |
 | `target_accent` | text | yes | `US`。 |
 | `pii_flag` | boolean | yes | PII疑い。 |

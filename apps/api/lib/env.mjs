@@ -1,6 +1,6 @@
 import { ApiError } from "./http.mjs";
 
-export function getApiEnv(env = process.env) {
+export function getApiEnv(env = process.env, options = {}) {
   const supabaseUrl = env.SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = env.SUPABASE_ANON_KEY || env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -17,7 +17,7 @@ export function getApiEnv(env = process.env) {
     openAiAdviceModel: env.OPENAI_ADVICE_MODEL || "gpt-4.1-mini",
     azureSpeechKey: env.AZURE_SPEECH_KEY,
     azureSpeechRegion: env.AZURE_SPEECH_REGION,
-    azureSpeechEndpoint: env.AZURE_SPEECH_ENDPOINT,
+    azureSpeechLocale: env.AZURE_SPEECH_LOCALE ?? "en-US",
     azureAssessmentMode: env.AZURE_ASSESSMENT_MODE || "auto",
     freeTextDailySoftCap: Number(env.FREE_TEXT_DAILY_SOFT_CAP || 20),
     ttsSignedUrlTtlSeconds: Number(env.TTS_SIGNED_URL_TTL_SECONDS || 3600)
@@ -31,8 +31,10 @@ export function getApiEnv(env = process.env) {
     missing.push(env.SUPABASE_ANON_KEY === undefined ? "SUPABASE_ANON_KEY or EXPO_PUBLIC_SUPABASE_ANON_KEY" : "SUPABASE_ANON_KEY");
   }
   if (!values.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!values.revenueCatSecretKey) missing.push("REVENUECAT_SECRET_KEY");
-  if (!values.revenueCatWebhookAuthToken) missing.push("REVENUECAT_WEBHOOK_AUTH_TOKEN");
+  if (options.requireRevenueCatWebhook) {
+    if (!values.revenueCatSecretKey) missing.push("REVENUECAT_SECRET_KEY");
+    if (!values.revenueCatWebhookAuthToken) missing.push("REVENUECAT_WEBHOOK_AUTH_TOKEN");
+  }
 
   if (missing.length > 0) {
     throw new ApiError(

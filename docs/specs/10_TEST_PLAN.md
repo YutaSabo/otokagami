@@ -30,7 +30,7 @@ MVP完了には次をすべて満たす必要がある。
 
 ### 判定
 
-- 録音音声がバックエンド経由でAzureに送られる。
+- 録音音声が短期トークンでiPhoneからAzureへ直接ストリーミングされ、自社バックエンドへ送られない。
 - Azure成功時のみ `attempts` に保存される。
 - Azure失敗時は練習回数、ストリーク、習熟度に入らない。
 - 期待IPAと実測IPAが2段で表示される。
@@ -213,6 +213,20 @@ Azureモックを使って確認する。
 - 成功時に `free_attempts` だけ保存される。
 - `phoneme_state` が変わらない。
 
+### `/api/speech-token`
+
+- 認証済みかつ練習可能なユーザーへ短期トークンを返す。
+- Azure設定不足、Azure発行失敗、認証エラーを区別する。
+- Subscription Keyがレスポンスとログへ含まれない。
+
+### 発音判定正規化
+
+- 欠損値を0や空文字にせず`null`にする。
+- Omission、Insertion、UnexpectedBreak、MissingBreak、Monotoneを分類する。
+- IPA候補をスコア降順で最大5件にする。
+- locale capabilitiesで非対応項目を非表示にする。
+- 古いrequest ID、連打、キャンセル、画面破棄後の結果を採用しない。
+
 ### `/api/free-text-consent`
 
 - Proでない場合拒否される。
@@ -292,6 +306,7 @@ Azureモックを使って確認する。
 
 - `AZURE_SPEECH_KEY`
 - `AZURE_SPEECH_REGION`
+- `AZURE_SPEECH_LOCALE`
 - `OPENAI_API_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`

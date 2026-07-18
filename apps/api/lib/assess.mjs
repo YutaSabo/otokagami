@@ -1,5 +1,7 @@
 import { ApiError, ok } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
+import { normalizePronunciationAssessment, sanitizePerformanceTiming } from "./pronunciation-result.mjs";
+import { capabilitiesForLocale } from "./speech-token.mjs";
 
 const VALID_MODES = new Set(["daily", "weak_drill", "phoneme_select"]);
 const CONFUSION_PAIRS = new Set([
@@ -101,25 +103,13 @@ const PHONEME_ALIASES = new Map(
     "ɔɪ": "oy"
   })
 );
+const KNOWN_PHONEME_IDS = new Set(PHONEME_ALIASES.values());
 
 function assertDateOnly(value, fieldName) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new ApiError("BAD_REQUEST", `${fieldName} が不正です。`, 400, false);
   }
   return value;
-}
-
-function requiredText(formData, fieldName) {
-  const value = formData.get(fieldName);
-  if (typeof value !== "string" || !value.trim()) {
-    throw new ApiError("BAD_REQUEST", `${fieldName} が必要です。`, 400, false);
-  }
-  return value.trim();
-}
-
-function optionalText(formData, fieldName) {
-  const value = formData.get(fieldName);
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function parseAttemptNo(value) {
@@ -131,45 +121,41 @@ function parseAttemptNo(value) {
 }
 
 async function readAssessmentInput(request) {
-  let formData;
+  if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
+    throw new ApiError("UNSUPPORTED_MEDIA_TYPE", "application/json が必要です。", 415, false);
+  }
+  let body;
   try {
-    formData = await request.formData();
+    body = await request.json();
   } catch {
-    throw new ApiError("BAD_REQUEST", "multipart/form-data が不正です。", 400, false);
+    throw new ApiError("BAD_REQUEST", "JSON本文が不正です。", 400, false);
   }
-
-  const audio = formData.get("audio");
-  if (!audio || typeof audio.arrayBuffer !== "function") {
-    throw new ApiError("BAD_REQUEST", "audio が必要です。", 400, false);
+  const practiceMode = String(body?.practice_mode ?? "");
+  if (!VALID_MODES.has(practiceMode)) throw new ApiError("BAD_REQUEST", "practice_mode が不正です。", 400, false);
+  if (!body?.azure_result || typeof body.azure_result !== "object" || Array.isArray(body.azure_result)) {
+    throw new ApiError("BAD_REQUEST", "azure_result が必要です。", 400, false);
   }
-
-  const practiceMode = requiredText(formData, "practice_mode");
-  if (!VALID_MODES.has(practiceMode)) {
-    throw new ApiError("BAD_REQUEST", "practice_mode が不正です。", 400, false);
+  if (JSON.stringify(body.azure_result).length > 1_000_000) {
+    throw new ApiError("BAD_REQUEST", "azure_result が大きすぎます。", 413, false);
   }
-
-  const audioBuffer = Buffer.from(await audio.arrayBuffer());
-  if (audioBuffer.length === 0) {
-    throw new ApiError("BAD_REQUEST", "audio が空です。", 400, false);
-  }
-
   const input = {
-    audioBuffer,
-    audioContentType: audio.type || "audio/wav; codecs=audio/pcm; samplerate=16000",
-    practiceItemId: requiredText(formData, "practice_item_id"),
+    azureRawJson: body.azure_result,
+    clientTiming: sanitizePerformanceTiming(body.client_timing),
+    locale: typeof body.locale === "string" ? body.locale : "en-US",
+    practiceItemId: String(body.practice_item_id ?? "").trim(),
     practiceMode,
-    dailySessionId: optionalText(formData, "daily_session_id"),
-    dailySessionItemId: optionalText(formData, "daily_session_item_id"),
-    attemptNo: parseAttemptNo(requiredText(formData, "attempt_no")),
-    timezone: optionalText(formData, "timezone") ?? "Asia/Tokyo",
-    practicedDate: assertDateOnly(requiredText(formData, "practiced_date"), "practiced_date"),
-    appVersion: optionalText(formData, "app_version")
+    dailySessionId: typeof body.daily_session_id === "string" ? body.daily_session_id : null,
+    dailySessionItemId: typeof body.daily_session_item_id === "string" ? body.daily_session_item_id : null,
+    attemptNo: parseAttemptNo(body.attempt_no),
+    timezone: typeof body.timezone === "string" ? body.timezone : "Asia/Tokyo",
+    practicedDate: assertDateOnly(body.practiced_date, "practiced_date"),
+    appVersion: typeof body.app_version === "string" ? body.app_version : null
   };
-
+  if (!input.practiceItemId) throw new ApiError("BAD_REQUEST", "practice_item_id が必要です。", 400, false);
+  if (!capabilitiesForLocale(input.locale)) throw new ApiError("UNSUPPORTED_LOCALE", "この発音判定ロケールには対応していません。", 400, false);
   if (practiceMode === "daily" && (!input.dailySessionId || !input.dailySessionItemId)) {
     throw new ApiError("BAD_REQUEST", "daily_session_id と daily_session_item_id が必要です。", 400, false);
   }
-
   return input;
 }
 
@@ -178,7 +164,11 @@ function normalizePhonemeId(value) {
   const raw = String(value).trim();
   if (!raw) return null;
   const normalized = raw.replace(/^\/|\/$/g, "").toLowerCase();
-  return PHONEME_ALIASES.get(raw) ?? PHONEME_ALIASES.get(normalized) ?? normalized;
+  const phonemeId = PHONEME_ALIASES.get(raw) ?? PHONEME_ALIASES.get(normalized) ?? null;
+  // observed_phoneme_id has a foreign key to phonemes. Azure can return tokens such
+  // as silence or an unmodelled phone; keep its IPA for display but never persist an
+  // unknown ID that would reject the whole assessment transaction.
+  return phonemeId && KNOWN_PHONEME_IDS.has(phonemeId) ? phonemeId : null;
 }
 
 function scoreColor(score) {
@@ -373,120 +363,35 @@ async function logError(supabase, { userId = null, source, operation, message, d
   }
 }
 
-function mockAzureAssessment({ practiceItem, targetPhonemeIds }) {
-  const phonemeResults = targetPhonemeIds.map((phonemeId, index) => {
-    const observed = phonemeId === "r" ? "l" : phonemeId;
-    const score = phonemeId === "r" ? 52 : 88;
-    return {
-      index,
-      word_index: 0,
-      expected_phoneme_id: phonemeId,
-      expected_ipa: phonemeId,
-      observed_phoneme_id: observed,
-      observed_ipa: observed,
-      score,
-      color: scoreColor(score),
-      is_target: true,
-      confusion_pair_id: confusionPairId(phonemeId, observed)
-    };
-  });
-  return {
-    RecognitionStatus: "Success",
-    DisplayText: practiceItem.text,
-    NBest: [
-      {
-        Display: practiceItem.text,
-        AccuracyScore: average(phonemeResults.map((result) => result.score)),
-        Words: phonemeResults.map((result) => ({
-          Word: practiceItem.normalized_text,
-          Phonemes: [
-            {
-              Phoneme: result.expected_ipa,
-              PronunciationAssessment: { AccuracyScore: result.score },
-              NBestPhonemes: [{ Phoneme: result.observed_ipa, Score: result.score }]
-            }
-          ]
-        }))
-      }
-    ],
-    phoneme_results: phonemeResults
-  };
-}
-
-async function azureRestAssessment({ config, input, practiceItem, fetchImpl }) {
-  const endpointBase = config.azureSpeechEndpoint
-    ? config.azureSpeechEndpoint.replace(/\/$/, "")
-    : `https://${config.azureSpeechRegion}.stt.speech.microsoft.com`;
-  const endpoint = `${endpointBase}/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed`;
-  const assessmentParams = Buffer.from(
-    JSON.stringify({
-      ReferenceText: practiceItem.normalized_text,
-      GradingSystem: "HundredMark",
-      Granularity: "Phoneme",
-      Dimension: "Comprehensive",
-      EnableMiscue: "True"
-    })
-  ).toString("base64");
-
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": config.azureSpeechKey,
-      "Pronunciation-Assessment": assessmentParams,
-      "Content-Type": input.audioContentType,
-      Accept: "application/json"
-    },
-    body: input.audioBuffer
-  });
-
-  if (!response.ok) {
-    throw new ApiError("AZURE_ASSESSMENT_FAILED", "判定に失敗しました。", 502, true);
-  }
-
-  const json = await response.json();
-  if (json.RecognitionStatus && json.RecognitionStatus !== "Success") {
-    throw new ApiError("AZURE_ASSESSMENT_FAILED", "判定に失敗しました。", 502, true);
-  }
-  return json;
-}
-
-export async function defaultAzureAssessment({ config, input, practiceItem, targetPhonemeIds, fetchImpl }) {
-  if (config.azureAssessmentMode === "fail") {
-    throw new ApiError("AZURE_ASSESSMENT_FAILED", "判定に失敗しました。", 502, true);
-  }
-  if (
-    config.azureAssessmentMode === "mock" ||
-    (!config.azureSpeechKey && !config.azureSpeechRegion && config.azureAssessmentMode === "auto")
-  ) {
-    return mockAzureAssessment({ practiceItem, targetPhonemeIds });
-  }
-  if (!config.azureSpeechKey || (!config.azureSpeechRegion && !config.azureSpeechEndpoint)) {
-    throw new ApiError("SERVER_ENV_MISSING", "Azure Speech設定が未設定です。", 500, false);
-  }
-  return azureRestAssessment({ config, input, practiceItem, fetchImpl });
+export async function defaultAzureAssessment({ input }) {
+  return input.azureRawJson;
 }
 
 async function resolvePracticeContext({ supabase, userId, input }) {
-  const practiceItem = await supabase.getPracticeItem(input.practiceItemId);
+  const contextReads =
+    input.practiceMode === "daily"
+      ? Promise.all([
+          supabase.getPracticeItem(input.practiceItemId),
+          supabase.getDailySessionById(input.dailySessionId),
+          supabase.getDailySessionItem(input.dailySessionItemId)
+        ])
+      : Promise.all([supabase.getPracticeItem(input.practiceItemId), supabase.listPracticeItemTargets([input.practiceItemId])]);
+  const [practiceItem, dailySession, dailySessionItem] = await contextReads;
   if (!practiceItem) {
     throw new ApiError("PRACTICE_ITEM_NOT_FOUND", "練習問題が見つかりません。", 404, false);
   }
 
   let targetPhonemeIds = [];
   if (input.practiceMode === "daily") {
-    const [session, sessionItem] = await Promise.all([
-      supabase.getDailySessionById(input.dailySessionId),
-      supabase.getDailySessionItem(input.dailySessionItemId)
-    ]);
-    if (!session || session.user_id !== userId || sessionItem?.daily_session_id !== session.id) {
+    if (!dailySession || dailySession.user_id !== userId || dailySessionItem?.daily_session_id !== dailySession.id) {
       throw new ApiError("FORBIDDEN", "daily session が不正です。", 403, false);
     }
-    if (sessionItem.practice_item_id !== input.practiceItemId) {
+    if (dailySessionItem.practice_item_id !== input.practiceItemId) {
       throw new ApiError("BAD_REQUEST", "daily_session_item_id と practice_item_id が一致しません。", 400, false);
     }
-    targetPhonemeIds = sessionItem.target_phoneme_ids ?? [];
+    targetPhonemeIds = dailySessionItem.target_phoneme_ids ?? [];
   } else {
-    const targets = await supabase.listPracticeItemTargets([input.practiceItemId]);
+    const targets = dailySession;
     targetPhonemeIds = targets.map((target) => target.target_id);
   }
 
@@ -624,13 +529,31 @@ export async function assessPractice({
   env = process.env,
   fetchImpl = fetch,
   now = new Date(),
-  azureAssessImpl = defaultAzureAssessment
+  azureAssessImpl = defaultAzureAssessment,
+  timing = null
 }) {
-  const input = await readAssessmentInput(request);
-  const { config, supabase, user } = await getPracticeContext({ request, env, fetchImpl, now });
-  const { practiceItem, targetPhonemeIds } = await resolvePracticeContext({ supabase, userId: user.id, input });
+  const startedAt = performance.now();
+  // Multipart parsing is independent from authentication. Running them together removes
+  // one otherwise unnecessary server-side network wait from the critical path.
+  const [input, { config, supabase, user }] = await Promise.all([
+    readAssessmentInput(request),
+    getPracticeContext({ request, env, fetchImpl, now })
+  ]);
+  if (timing) {
+    timing.input_and_auth_ms = Math.round(performance.now() - startedAt);
+    timing.result_json_bytes = JSON.stringify(input.azureRawJson).length;
+  }
 
+  const contextStartedAt = performance.now();
+  const { practiceItem, targetPhonemeIds } = await resolvePracticeContext({ supabase, userId: user.id, input });
+  if (timing) timing.practice_context_ms = Math.round(performance.now() - contextStartedAt);
+
+  // Static advice metadata does not depend on Azure's result. Fetch it while the
+  // external pronunciation service is working instead of adding it after saves.
+  const presentationPromise = Promise.all([supabase.listActiveAdvicePages(), supabase.listActivePhonemes()]);
+  void presentationPromise.catch(() => undefined);
   let azureRawJson;
+  const assessmentStartedAt = performance.now();
   try {
     azureRawJson = await azureAssessImpl({ config, input, practiceItem, targetPhonemeIds, fetchImpl });
   } catch (error) {
@@ -639,17 +562,37 @@ export async function assessPractice({
       source: "azure",
       operation: "pronunciation_assessment",
       message: error instanceof ApiError ? error.message : "判定に失敗しました。",
-      details: { code: error?.code, practice_item_id: input.practiceItemId, practice_mode: input.practiceMode },
+      details: {
+        code: error?.code,
+        database: error?.details ?? null,
+        practice_item_id: input.practiceItemId,
+        practice_mode: input.practiceMode
+      },
       now
     });
     throw error instanceof ApiError
       ? error
       : new ApiError("AZURE_ASSESSMENT_FAILED", "判定に失敗しました。", 502, true);
   }
+  if (timing) timing.speech_assessment_ms = Math.round(performance.now() - assessmentStartedAt);
 
   try {
+    const normalizationStartedAt = performance.now();
     const phonemeResults = normalizeAzurePhonemeResults({ azureRawJson, targetPhonemeIds });
+    const normalizedResult = normalizePronunciationAssessment({
+      azureRawJson,
+      locale: input.locale ?? "en-US",
+      referenceText: practiceItem.normalized_text,
+      capabilities: capabilitiesForLocale(input.locale ?? "en-US"),
+      timing: {
+        buttonToResultMs: input.clientTiming?.buttonToResultMs ?? null,
+        recognitionLatencyMs: input.clientTiming?.recognitionLatencyMs ?? null,
+        totalProcessingMs: input.clientTiming?.totalProcessingMs ?? null
+      }
+    });
     const summary = summarizeAttempt(phonemeResults);
+    if (timing) timing.normalization_ms = Math.round(performance.now() - normalizationStartedAt);
+    const persistenceStartedAt = performance.now();
     const attempt = await supabase.createAttempt({
       user_id: user.id,
       daily_session_id: input.dailySessionId,
@@ -667,17 +610,22 @@ export async function assessPractice({
       is_perfect: summary.isPerfect,
       is_best: false,
       azure_raw_json: azureRawJson,
+      normalized_result: normalizedResult,
+      performance_metrics: input.clientTiming ?? null,
       app_version: input.appVersion
     });
 
-    await supabase.createAttemptPhonemeResults(
-      phonemeResults.map((result) => ({
-        attempt_id: attempt.id,
-        ...result
-      }))
-    );
-
-    const best = await recomputeBestAttempt({ supabase, userId: user.id, input, attempt });
+    // Neither operation depends on the other. Keeping both durable while issuing them
+    // concurrently avoids an extra Supabase round trip before the result is shown.
+    const [best] = await Promise.all([
+      recomputeBestAttempt({ supabase, userId: user.id, input, attempt }),
+      supabase.createAttemptPhonemeResults(
+        phonemeResults.map((result) => ({
+          attempt_id: attempt.id,
+          ...result
+        }))
+      )
+    ]);
     let updatedStates = [];
     let completedDailySession = false;
     let earnedBadges = [];
@@ -702,7 +650,11 @@ export async function assessPractice({
       });
     }
 
-    const [advicePages, phonemes] = await Promise.all([supabase.listActiveAdvicePages(), supabase.listActivePhonemes()]);
+    const [advicePages, phonemes] = await presentationPromise;
+    if (timing) {
+      timing.persistence_ms = Math.round(performance.now() - persistenceStartedAt);
+      timing.total_ms = Math.round(performance.now() - startedAt);
+    }
     return {
       attempt_id: attempt.id,
       is_best: best.isNewAttemptBest,
@@ -710,6 +662,7 @@ export async function assessPractice({
       target_score_avg: summary.targetScoreAvg,
       is_correct: summary.isCorrect,
       is_perfect: summary.isPerfect,
+      pronunciation_assessment: normalizedResult,
       phoneme_results: phonemeResults.map((result) => ({
         index: result.index,
         word_index: result.word_index,
@@ -733,7 +686,12 @@ export async function assessPractice({
       source: "supabase",
       operation: "save_assessment",
       message: error instanceof ApiError ? error.message : "判定結果の保存に失敗しました。",
-      details: { code: error?.code, practice_item_id: input.practiceItemId, practice_mode: input.practiceMode },
+      details: {
+        code: error?.code,
+        database: error?.details ?? null,
+        practice_item_id: input.practiceItemId,
+        practice_mode: input.practiceMode
+      },
       now
     });
     throw error;

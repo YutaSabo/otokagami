@@ -101,6 +101,10 @@
 
 API層は Azure レスポンスから、UIと集計で使う正規化済みの `phoneme_results` を生成する。
 
+正規化の主モデルは `PronunciationAssessmentResult` とし、`provider`、`locale`、`referenceText`、`timing`、`capabilities`、`overall`、`issues`、`words` を持つ。既存の `phoneme_results` は集計・既存UI互換の派生ビューとして維持する。スコア、Offset、Duration、IPA候補、ErrorTypeが返らない場合は0や空文字ではなくnullを保持する。
+
+`en-US`の標準capabilitiesは音素スコア、IPA名、候補音素、音節、prosody、miscueを有効とする。別ロケールは実際のAzure対応状況に基づいて個別定義し、国籍や母語によるスコア補正は行わない。
+
 `phoneme_results` の最小項目:
 
 | 項目 | 内容 |

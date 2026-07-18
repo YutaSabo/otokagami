@@ -1,6 +1,6 @@
 import { ApiError, ok, readJson } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
-import { getOrCreateTts } from "./tts.mjs";
+import { getOrCreateTtsReference } from "./tts.mjs";
 
 const DIFFICULTY_RANK = { high: 3, medium: 2, low: 1 };
 const DAILY_SLOTS = [
@@ -275,8 +275,8 @@ function itemDetailsById(practiceItems) {
 
 async function ttsForItem({ item, supabase, config, fetchImpl, now }) {
   const [normal, slow] = await Promise.all([
-    getOrCreateTts({ supabase, config, text: item.normalizedText, accent: "US", speed: "normal", fetchImpl, now }),
-    getOrCreateTts({ supabase, config, text: item.normalizedText, accent: "US", speed: "slow", fetchImpl, now })
+    getOrCreateTtsReference({ supabase, text: item.normalizedText, accent: "US", speed: "normal", now }),
+    getOrCreateTtsReference({ supabase, text: item.normalizedText, accent: "US", speed: "slow", now })
   ]);
 
   return {

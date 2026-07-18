@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assessPractice } from "../lib/assess.mjs";
+import { assessPractice, normalizeAzurePhonemeResults } from "../lib/assess.mjs";
 import { ApiError } from "../lib/http.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -92,21 +92,22 @@ function createFetchMock(state) {
 }
 
 function assessRequest(overrides = {}) {
-  const form = new FormData();
-  form.set("audio", new Blob([Buffer.from("RIFFmock")], { type: "audio/wav; codecs=audio/pcm; samplerate=16000" }), "audio.wav");
-  form.set("practice_item_id", overrides.practice_item_id ?? "word_r_001");
-  form.set("practice_mode", overrides.practice_mode ?? "daily");
-  form.set("daily_session_id", overrides.daily_session_id ?? "daily_sessions-1");
-  form.set("daily_session_item_id", overrides.daily_session_item_id ?? "daily_session_items-1");
-  form.set("attempt_no", String(overrides.attempt_no ?? 1));
-  form.set("timezone", "Asia/Tokyo");
-  form.set("practiced_date", overrides.practiced_date ?? "2026-07-04");
-  form.set("app_version", "1.0.0");
-
   return new Request("http://api.test/api/assess", {
     method: "POST",
-    headers: { authorization: "Bearer valid-token" },
-    body: form
+    headers: { authorization: "Bearer valid-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      azure_result: overrides.azure_result ?? azureResult(52, "l"),
+      client_timing: { recognitionLatencyMs: 250 },
+      locale: "en-US",
+      practice_item_id: overrides.practice_item_id ?? "word_r_001",
+      practice_mode: overrides.practice_mode ?? "daily",
+      daily_session_id: overrides.daily_session_id ?? "daily_sessions-1",
+      daily_session_item_id: overrides.daily_session_item_id ?? "daily_session_items-1",
+      attempt_no: overrides.attempt_no ?? 1,
+      timezone: "Asia/Tokyo",
+      practiced_date: overrides.practiced_date ?? "2026-07-04",
+      app_version: "1.0.0"
+    })
   });
 }
 
@@ -356,4 +357,67 @@ test("assess logs Azure failure without saving scored attempt or aggregation", a
   assert.equal(state.error_logs.length, 1);
   assert.equal(state.error_logs[0].source, "azure");
   assert.doesNotMatch(JSON.stringify(state.error_logs), /RIFFmock|valid-token|service-role-key/);
+});
+
+test("unknown Azure observed phonemes keep their display IPA without violating the phoneme foreign key", () => {
+  const [result] = normalizeAzurePhonemeResults({
+    targetPhonemeIds: ["theta"],
+    azureRawJson: {
+      NBest: [
+        {
+          Words: [
+            {
+              Phonemes: [
+                {
+                  Phoneme: "θ",
+                  PronunciationAssessment: { AccuracyScore: 72 },
+                  NBestPhonemes: [{ Phoneme: "sil", Score: 72 }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  });
+
+  assert.equal(result.expected_phoneme_id, "theta");
+  assert.equal(result.observed_phoneme_id, null);
+  assert.equal(result.observed_ipa, "sil");
+});
+
+test("assess records privacy-safe phase timings across repeated local runs", async (t) => {
+  const totals = [];
+  for (let index = 0; index < 10; index += 1) {
+    const timing = {};
+    await assessPractice({
+      request: assessRequest(),
+      env,
+      fetchImpl: createFetchMock(seedState()),
+      now: new Date("2026-07-04T01:00:00.000Z"),
+      timing,
+      azureAssessImpl: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return azureResult(90, "r");
+      }
+    });
+    assert.equal(typeof timing.result_json_bytes, "number");
+    assert.ok(timing.result_json_bytes > 0);
+    for (const field of ["input_and_auth_ms", "practice_context_ms", "speech_assessment_ms", "normalization_ms", "persistence_ms", "total_ms"]) {
+      assert.equal(typeof timing[field], "number", `${field} is present`);
+    }
+    totals.push(timing.total_ms);
+  }
+  const ordered = [...totals].sort((left, right) => left - right);
+  const percentile = (ratio) => ordered[Math.ceil(ordered.length * ratio) - 1];
+  t.diagnostic(
+    JSON.stringify({
+      environment: "local mock (20ms simulated speech provider; no device/network)",
+      runs: totals.length,
+      mean_ms: Math.round(totals.reduce((sum, value) => sum + value, 0) / totals.length),
+      median_ms: percentile(0.5),
+      p95_ms: percentile(0.95),
+      max_ms: ordered.at(-1)
+    })
+  );
 });

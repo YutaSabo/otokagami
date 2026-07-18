@@ -53,7 +53,7 @@ export async function bootstrapUser({
       profile = await supabase.createProfile({
         user_id: user.id,
         anon_public_id: generateAnonPublicId(),
-        native_language: "ja",
+        native_language: "und",
         target_accent: "US",
         timezone: body.timezone,
         free_trial_started_at: existingInstallation?.first_seen_at ?? nowIso,

@@ -1,16 +1,28 @@
 {
   "name": "pronunciation-mirror",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "packageManager": "npm@11.9.0",
   "workspaces": [
     "apps/*",
     "services/*"
   ],
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
   "scripts": {
     "dev:mobile": "npm --workspace @pronunciation-mirror/mobile run start",
     "dev:api": "npm --workspace @pronunciation-mirror/api run dev",
     "dev:inference": "npm --workspace @pronunciation-mirror/inference run dev",
+    "eas:configure": "npm --workspace @pronunciation-mirror/mobile run eas:configure",
+    "eas:build:staging": "npm --workspace @pronunciation-mirror/mobile run eas:build:staging",
+    "eas:submit:staging": "npm --workspace @pronunciation-mirror/mobile run eas:submit:staging",
+    "eas:update:staging": "npm --workspace @pronunciation-mirror/mobile run eas:update:staging",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",

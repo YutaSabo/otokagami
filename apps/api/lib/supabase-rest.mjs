@@ -51,7 +51,23 @@ export function createSupabaseRestClient(config, fetchImpl = fetch) {
     });
 
     if (!response.ok) {
-      throw new ApiError("SUPABASE_REQUEST_FAILED", "データベース処理に失敗しました。", 502, true);
+      // Retain only operational metadata for server-side diagnostics. Never retain a
+      // response body, query values, access token, or user-provided content.
+      const payload = await response.json().catch(() => null);
+      const databaseCode = typeof payload?.code === "string" ? payload.code : null;
+      const databaseCategory = databaseCode?.startsWith("23")
+        ? "constraint"
+        : databaseCode?.startsWith("42")
+          ? "schema"
+          : response.status === 401 || response.status === 403
+            ? "authorization"
+            : "request";
+      throw new ApiError("SUPABASE_REQUEST_FAILED", "データベース処理に失敗しました。", 502, true, {
+        status: response.status,
+        operation: `${options.method ?? "GET"} ${path.split("?")[0]}`,
+        database_code: databaseCode,
+        database_category: databaseCategory
+      });
     }
 
     if (response.status === 204) return null;

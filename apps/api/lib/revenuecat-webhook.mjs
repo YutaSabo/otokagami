@@ -70,7 +70,7 @@ export async function processRevenueCatWebhook({
   fetchImpl = fetch,
   now = new Date()
 }) {
-  const config = getApiEnv(env);
+  const config = getApiEnv(env, { requireRevenueCatWebhook: true });
   assertWebhookAuthorization(request, config.revenueCatWebhookAuthToken);
 
   const body = await readJson(request);
