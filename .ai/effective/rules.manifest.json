@@ -1,0 +1,298 @@
+{
+  "decisions": {
+    "app.client-only-authorization": "C-APP-03",
+    "app.client-secret": "C-APP-01",
+    "app.unapproved-destructive-database": "C-APP-02",
+    "app.unapproved-production-deploy": "C-APP-02",
+    "authoritative-value.guess": "G-12",
+    "change.verify": "G-08",
+    "database.destructive": "G-06",
+    "database.destructive-without-backup": "RP-DESTRUCTIVE-DATABASE",
+    "database.unapproved-delete-all": "RP-DESTRUCTIVE-DATABASE",
+    "database.unapproved-drop": "RP-DESTRUCTIVE-DATABASE",
+    "database.unapproved-production-reset": "RP-DESTRUCTIVE-DATABASE",
+    "database.unapproved-truncate": "RP-DESTRUCTIVE-DATABASE",
+    "deploy.production": "G-06",
+    "external-service.save": "G-06",
+    "external.failure": "G-09",
+    "financial.live-order": "G-06",
+    "git.commit": "G-14",
+    "git.delivery": "G-14",
+    "git.destructive-reset": "G-11",
+    "git.force-push": "G-11",
+    "git.history-rewrite": "G-06",
+    "git.push": "G-14",
+    "git.unrelated-overwrite": "G-11",
+    "notion.save": "G-06",
+    "operation.local-change": "G-06",
+    "operation.read": "G-06",
+    "otokagami.direct-main-change": "P-OTOKAGAMI-01",
+    "otokagami.project-governance": "P-OTOKAGAMI-02",
+    "paid.commit": "G-06",
+    "project.adopt": "G-16",
+    "project.create": "G-16",
+    "project.provision": "G-16",
+    "publish.public": "G-06",
+    "pull-request.create": "G-14",
+    "pull-request.merge": "G-14",
+    "record.authoritative-state": "G-01",
+    "resource.delete": "G-06",
+    "risk.external-write": "RP-EXTERNAL-WRITE",
+    "risk.paid-service": "RP-PAID-SERVICE",
+    "risk.personal-data": "RP-PERSONAL-DATA",
+    "risk.production-deployment": "RP-PRODUCTION-DEPLOYMENT",
+    "runtime.handoff-create": "G-15",
+    "runtime.handoff-reconcile": "G-15",
+    "secret.expose": "G-07",
+    "secret.persist": "G-07",
+    "task.actor": "G-03",
+    "task.record": "G-04",
+    "todoist.task-activate": "G-13",
+    "todoist.task-complete": "G-06",
+    "todoist.task-create": "G-13",
+    "todoist.work-log": "G-15",
+    "work.report": "G-10",
+    "work.scope": "G-05",
+    "work.start": "G-02"
+  },
+  "generated_at": "2026-07-30T16:41:16+09:00",
+  "project_id": "otokagami",
+  "rules": [
+    {
+      "checksum": "138f776836999924b20c394989e4c982223f6e0fd7b5a004279e81fccf6e5089",
+      "id": "G-01",
+      "overrideable": false,
+      "path": "rules/global/G-01-source-of-truth.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "74811afd60d3a3244e87dc37218ea9b23783ea69d7e742858eac1c98f96e3b42",
+      "id": "G-02",
+      "overrideable": false,
+      "path": "rules/global/G-02-startup.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "5e7e9c7162096f73e6e6c314930c1bff19c249c4957ba6ac34b6dd42f12ca609",
+      "id": "G-03",
+      "overrideable": false,
+      "path": "rules/global/G-03-task-actors.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "ab39bebf83ff5545ff572185518ef19e6ad98123bf2801359ba935946dda7883",
+      "id": "G-04",
+      "overrideable": true,
+      "path": "rules/global/G-04-task-record.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "f398b120c235dc4fd22997212e52735a577ea692deda8e51f00f8280c174a090",
+      "id": "G-05",
+      "overrideable": false,
+      "path": "rules/global/G-05-scope.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "eb2c62d883b84296644e6c71a0dd5dfee62dcb3273f93c2199992f9603b83468",
+      "id": "G-06",
+      "overrideable": false,
+      "path": "rules/global/G-06-approvals.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "7eec7893f1bf2e62d0ad1d81bcf524af37fb8a5e0f7b2cae7ef56a0793c2a243",
+      "id": "G-07",
+      "overrideable": false,
+      "path": "rules/global/G-07-security.md",
+      "scope": "global",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "1547eedcbb7244677a501ccd761c3e79ecf444f4aa195772d295a1bb3809b03b",
+      "id": "G-08",
+      "overrideable": false,
+      "path": "rules/global/G-08-quality-gate.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "3561e5627339b51934aaeedba57bcdbfee951baddee3ea2c6df6ac3ed26fe587",
+      "id": "G-09",
+      "overrideable": false,
+      "path": "rules/global/G-09-external-failure.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "f91b2335eea775a910bee3c500fe28c5a364ba4899b80dec0720cf8bf1b4d6b6",
+      "id": "G-10",
+      "overrideable": true,
+      "path": "rules/global/G-10-reporting.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "f2d0e430867539d7775cb66517c2f1e3c8dca6320e56ab3e69bb8e42ed15625e",
+      "id": "G-11",
+      "overrideable": false,
+      "path": "rules/global/G-11-git-safety.md",
+      "scope": "global",
+      "severity": "deny",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "0a482e065ddd6b0e756f0c00a94edc9289f5858a8797d04fa52433bace3fe591",
+      "id": "G-12",
+      "overrideable": false,
+      "path": "rules/global/G-12-no-guessing.md",
+      "scope": "global",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "a5d8218e04dd4894e9841e501d1ce99f7b4f07a6f2ed229f778416edd5b5e805",
+      "id": "G-13",
+      "overrideable": true,
+      "path": "rules/global/G-13-active-tasks-due-today.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.3.0"
+    },
+    {
+      "checksum": "9e4a26c33eb9efa2b02505d2ea9c4aa1d5892983aabc587f0a81fb769aa29915",
+      "id": "G-14",
+      "overrideable": true,
+      "path": "rules/global/G-14-autonomous-git-delivery.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "076e549ae64137c207da7e2abb6fdb4c8788a6a1ea9adde782beb02f01fdacdc",
+      "id": "G-15",
+      "overrideable": false,
+      "path": "rules/global/G-15-runtime-handoff.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "c4264ba3f70da5c7461b4ae7d114e37e0088105b2239bfb3fb14cf3b97180b58",
+      "id": "G-16",
+      "overrideable": true,
+      "path": "rules/global/G-16-project-lifecycle.md",
+      "scope": "global",
+      "severity": "require",
+      "version": "0.4.0"
+    },
+    {
+      "checksum": "6356a77148ea39231cf0b23efc52ac525f5b6be6c1ff0d7de817de28d606774d",
+      "id": "C-APP-01",
+      "overrideable": false,
+      "path": "rules/categories/app/C-APP-01-secret-boundary.md",
+      "scope": "category:app",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "ed6b1adee232f520b623c84ab1372c33590288f3b82ffc79de6746a2c84a6932",
+      "id": "C-APP-02",
+      "overrideable": false,
+      "path": "rules/categories/app/C-APP-02-production-change.md",
+      "scope": "category:app",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "d20a57f5ee724798bdbe4965d5af2bf7bab162ce5b45e1135cd47bdca50ff383",
+      "id": "C-APP-03",
+      "overrideable": false,
+      "path": "rules/categories/app/C-APP-03-server-authorization.md",
+      "scope": "category:app",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "0e6523a4b0c7b72bb7ede379f541c96ba0e003179c21da0fba366c422116f9b1",
+      "id": "RP-DESTRUCTIVE-DATABASE",
+      "overrideable": false,
+      "path": "rules/profiles/destructive-database.md",
+      "scope": "profile:destructive-database",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "ac5a6e442b1fcc8525df51e7df43e134a8fd9d9c9f0b008524da750f30267243",
+      "id": "RP-EXTERNAL-WRITE",
+      "overrideable": false,
+      "path": "rules/profiles/external-write.md",
+      "scope": "profile:external-write",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "abf86bdb90b70db49561447728055245f3f7f3d2e5549f6bfa2a084a48ab17ab",
+      "id": "RP-PAID-SERVICE",
+      "overrideable": false,
+      "path": "rules/profiles/paid-service.md",
+      "scope": "profile:paid-service",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "3f2a8b465bdd0f4ef9bc4b9ee123c79c11dca3df95564e8c4c36d697c37dcb3e",
+      "id": "RP-PERSONAL-DATA",
+      "overrideable": false,
+      "path": "rules/profiles/personal-data.md",
+      "scope": "profile:personal-data",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "c25edb8496d88a865bf9765233a6230caf656c4a407a774321da7b3462ff4879",
+      "id": "RP-PRODUCTION-DEPLOYMENT",
+      "overrideable": false,
+      "path": "rules/profiles/production-deployment.md",
+      "scope": "profile:production-deployment",
+      "severity": "require",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "3747dc88063b1d5fe669a3d46affd4d412e2ea82dd985be2c26eaee1ab1b6165",
+      "id": "P-OTOKAGAMI-01",
+      "overrideable": false,
+      "path": "rules/projects/otokagami/P-OTOKAGAMI-01-release-branch.md",
+      "scope": "project:otokagami",
+      "severity": "deny",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": "ade6708cdace5973d0b93a8cfd8cf8bc86c8af7a8a496db480783a401ce6bb93",
+      "id": "P-OTOKAGAMI-02",
+      "overrideable": false,
+      "path": "rules/projects/otokagami/P-OTOKAGAMI-02-governance.md",
+      "scope": "project:otokagami",
+      "severity": "require",
+      "version": "0.2.0"
+    }
+  ],
+  "schema_version": "2.0.0",
+  "source_commit": "23924b68d2819d436bebe93ec9b70c1607df4b7d"
+}

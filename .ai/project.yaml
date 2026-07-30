@@ -1,0 +1,57 @@
+schema_version: 2.0.0
+project:
+  project_id: otokagami
+  display_name: Otokagami
+  primary_category: app
+  management_kind: standalone
+  parent_project_id: null
+  ai_configuration_version: 0.4.1
+  source_tag: v0.4.1
+  source_commit: 23924b68d2819d436bebe93ec9b70c1607df4b7d
+  lifecycle: active
+  runtime: codex-local
+  risk_profiles:
+  - production-deployment
+  - personal-data
+  - external-write
+  - destructive-database
+  - paid-service
+  rule_ids:
+  - G-01
+  - G-02
+  - G-03
+  - G-04
+  - G-05
+  - G-06
+  - G-07
+  - G-08
+  - G-09
+  - G-10
+  - G-11
+  - G-12
+  - G-13
+  - G-14
+  - G-15
+  - G-16
+  - C-APP-01
+  - C-APP-02
+  - C-APP-03
+  - RP-DESTRUCTIVE-DATABASE
+  - RP-EXTERNAL-WRITE
+  - RP-PAID-SERVICE
+  - RP-PERSONAL-DATA
+  - RP-PRODUCTION-DEPLOYMENT
+  - P-OTOKAGAMI-01
+  - P-OTOKAGAMI-02
+  skill_ids:
+  - create-project
+  - sync-runtime-handoffs
+  bindings:
+    todoist_project_ref: todoist-project:6h9GF96CpRxppv9W
+    notion_ref: none
+  git_delivery:
+    mode: autonomous
+    default_branch: main
+    merge_policy: pull-request-only
+    production_on_merge: unknown
+  cloud_handoff: true
