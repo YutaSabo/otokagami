@@ -1,8 +1,8 @@
 <!-- AI-CONFIG:BEGIN MANAGED -->
 <!--
 GENERATED MANAGED BLOCK — DO NOT EDIT THIS BLOCK DIRECTLY.
-Source: ai-configuration 23924b68d2819d436bebe93ec9b70c1607df4b7d
-Generated at: 2026-07-30T16:41:16+09:00
+Source: ai-configuration b7b4342fd98e8b31b60500ac32d8ad27ee2304dc
+Generated at: 2026-07-31T11:27:54+09:00
 Project: otokagami
 -->
 
@@ -18,15 +18,16 @@ decisions, and work logs remain in the linked Todoist project.
 - Category: `app`
 - Runtime: `codex-local`
 - Management kind: `standalone`
+- Runtime distribution: `public-safe`
 - Todoist binding mode: `dedicated`
-- Todoist Project reference: `todoist-project:6h9GF96CpRxppv9W`
+- Todoist Project reference: `runtime-resolved:todoist-project`
 - Git delivery: `autonomous`
 - Merge policy: `pull-request-only`
 - Default branch: `main`
 - Risk profiles: `production-deployment`, `personal-data`, `external-write`, `destructive-database`, `paid-service`
 - Adoption state: `planned`
-- Source commit: `23924b68d2819d436bebe93ec9b70c1607df4b7d`
-- Generated at: `2026-07-30T16:41:16+09:00`
+- Source commit: `b7b4342fd98e8b31b60500ac32d8ad27ee2304dc`
+- Generated at: `2026-07-31T11:27:54+09:00`
 
 ## Required startup
 
@@ -439,12 +440,13 @@ only for the decision that cannot be derived safely.
 Scope: `global` · Severity: `require` ·
 Overrideable: `false`
 
-Use Issues labeled `runtime-handoff` in the private `YutaSabo/ai-configuration`
+Use Issues labeled `runtime-handoff` in the configured private central handoff
 repository as a temporary transport when Cloud cannot access Todoist or a
-person-assigned Notion target. Local Codex checks the queue automatically before
-substantive Project work. Validate Project identity, source commit or pull request,
-operation target, authorization state, plan hash when present, and idempotency key
-before applying anything.
+person-assigned Notion target. Resolve the repository from the Local runtime binding;
+do not embed a private repository reference in public Project artifacts. Local Codex
+checks the queue automatically before substantive Project work. Validate Project
+identity, source commit or pull request, operation target, authorization state, plan
+hash when present, and idempotency key before applying anything.
 
 Apply standing-authorized Todoist work logs without a separate prompt. Apply another
 Todoist or Notion mutation only when the handoff proves exact prior authorization and
@@ -617,7 +619,7 @@ release gate.
 ## Active skill references
 
 
-- `create-project` — version `0.4.0`, scope `global`,
+- `create-project` — version `0.4.1`, scope `global`,
   canonical source `skills/global/create-project`, status `canonical`
 
 - `sync-runtime-handoffs` — version `0.4.0`, scope `global`,

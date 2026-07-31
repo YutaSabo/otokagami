@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-07-30T16:41:16+09:00",
+  "generated_at": "2026-07-31T11:27:54+09:00",
   "project_id": "otokagami",
   "schema_version": "2.0.0",
   "skills": [
     {
       "canonical_source": "skills/global/create-project",
-      "checksum": "ee77e95941ea6c276f5347609a36dfdc752395e07b21c02b42ec9409735e27dc",
+      "checksum": "7f97747fb8e7738ce75e34db1d4f84b0c6f80097a39f5d0c71931581c19cfdb7",
       "scope": "global",
       "skill_id": "create-project",
-      "source_commit": "3e6596fe03bb79447eb2c869c07246f63027c00b",
+      "source_commit": "5f076b009e86b20972517434a577171b78e73bb2",
       "status": "canonical",
-      "version": "0.4.0"
+      "version": "0.4.1"
     },
     {
       "canonical_source": "skills/global/sync-runtime-handoffs",
@@ -22,5 +22,5 @@
       "version": "0.4.0"
     }
   ],
-  "source_commit": "23924b68d2819d436bebe93ec9b70c1607df4b7d"
+  "source_commit": "b7b4342fd98e8b31b60500ac32d8ad27ee2304dc"
 }

@@ -5,11 +5,13 @@ project:
   primary_category: app
   management_kind: standalone
   parent_project_id: null
-  ai_configuration_version: 0.4.1
-  source_tag: v0.4.1
-  source_commit: 23924b68d2819d436bebe93ec9b70c1607df4b7d
+  ai_configuration_version: 0.4.4
+  source_tag: v0.4.4
+  source_commit: b7b4342fd98e8b31b60500ac32d8ad27ee2304dc
   lifecycle: active
   runtime: codex-local
+  repository_visibility: public
+  runtime_distribution: public-safe
   risk_profiles:
   - production-deployment
   - personal-data
@@ -47,7 +49,7 @@ project:
   - create-project
   - sync-runtime-handoffs
   bindings:
-    todoist_project_ref: todoist-project:6h9GF96CpRxppv9W
+    todoist_project_ref: runtime-resolved:todoist-project
     notion_ref: none
   git_delivery:
     mode: autonomous

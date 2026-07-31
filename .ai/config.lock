@@ -1,11 +1,11 @@
 {
-  "ai_configuration_version": "0.4.1",
-  "compiler_version": "0.4.1",
-  "generated_at": "2026-07-30T16:41:16+09:00",
+  "ai_configuration_version": "0.4.4",
+  "compiler_version": "0.4.4",
+  "generated_at": "2026-07-31T11:27:54+09:00",
   "output_checksums": {
-    "AGENTS.md": "d67f8dcc547411278332655198b82e8f07acc054c49fb0d4662c281abe6cde74",
-    "rules.manifest.json": "c478d1afe1ad5926489ceecd0a76938c3ceecc0a1458248fb8218936c5fc4b1d",
-    "skills.manifest.json": "2ad5f27d87a580e55d4a8259faa1421cc34a7c938d505ed187bb58137f24a24b"
+    "AGENTS.md": "522edef8016b4c336748b1cdeb63b67bf2bd082954f5923377d2658282454658",
+    "rules.manifest.json": "d3dcc816144c48e00c03e262dc6dabe68263a269fc8e8dddd4481e2ee89a66cb",
+    "skills.manifest.json": "1ca1fb91a9679369393ec584be5d4df3b33fb364f0f51067dd4753722053a8fa"
   },
   "primary_category": "app",
   "project_id": "otokagami",
@@ -34,7 +34,7 @@
     "G-12": "0a482e065ddd6b0e756f0c00a94edc9289f5858a8797d04fa52433bace3fe591",
     "G-13": "a5d8218e04dd4894e9841e501d1ce99f7b4f07a6f2ed229f778416edd5b5e805",
     "G-14": "9e4a26c33eb9efa2b02505d2ea9c4aa1d5892983aabc587f0a81fb769aa29915",
-    "G-15": "076e549ae64137c207da7e2abb6fdb4c8788a6a1ea9adde782beb02f01fdacdc",
+    "G-15": "730e2227ad01849da24fa0b6b44fbd58954d2e2d01e767fd269745c043736a5d",
     "G-16": "c4264ba3f70da5c7461b4ae7d114e37e0088105b2239bfb3fb14cf3b97180b58",
     "P-OTOKAGAMI-01": "3747dc88063b1d5fe669a3d46affd4d412e2ea82dd985be2c26eaee1ab1b6165",
     "P-OTOKAGAMI-02": "ade6708cdace5973d0b93a8cfd8cf8bc86c8af7a8a496db480783a401ce6bb93",
@@ -74,13 +74,13 @@
   ],
   "schema_version": "2.0.0",
   "skill_checksums": {
-    "create-project": "ee77e95941ea6c276f5347609a36dfdc752395e07b21c02b42ec9409735e27dc",
+    "create-project": "7f97747fb8e7738ce75e34db1d4f84b0c6f80097a39f5d0c71931581c19cfdb7",
     "sync-runtime-handoffs": "f5cd036799376bdec934aceacd7bdd489e5bce0e4a4b0f70b9b8c3bcb9378de6"
   },
   "skill_ids": [
     "create-project",
     "sync-runtime-handoffs"
   ],
-  "source_commit": "23924b68d2819d436bebe93ec9b70c1607df4b7d",
-  "source_tag": "v0.4.1"
+  "source_commit": "b7b4342fd98e8b31b60500ac32d8ad27ee2304dc",
+  "source_tag": "v0.4.4"
 }
