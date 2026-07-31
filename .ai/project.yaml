@@ -5,9 +5,9 @@ project:
   primary_category: app
   management_kind: standalone
   parent_project_id: null
-  ai_configuration_version: 0.4.4
-  source_tag: v0.4.4
-  source_commit: b7b4342fd98e8b31b60500ac32d8ad27ee2304dc
+  ai_configuration_version: 0.4.5
+  source_tag: v0.4.5
+  source_commit: ef741d322b1e2c9fa5b19851e0730439e9e1eb00
   lifecycle: active
   runtime: codex-local
   repository_visibility: public
@@ -55,5 +55,6 @@ project:
     mode: autonomous
     default_branch: main
     merge_policy: pull-request-only
+    preview_deployment_on_push: allowed
     production_on_merge: unknown
   cloud_handoff: true

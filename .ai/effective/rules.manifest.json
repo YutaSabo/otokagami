@@ -12,6 +12,7 @@
     "database.unapproved-drop": "RP-DESTRUCTIVE-DATABASE",
     "database.unapproved-production-reset": "RP-DESTRUCTIVE-DATABASE",
     "database.unapproved-truncate": "RP-DESTRUCTIVE-DATABASE",
+    "deploy.preview": "G-06",
     "deploy.production": "G-06",
     "external-service.save": "G-06",
     "external.failure": "G-09",
@@ -55,7 +56,7 @@
     "work.scope": "G-05",
     "work.start": "G-02"
   },
-  "generated_at": "2026-07-31T11:27:54+09:00",
+  "generated_at": "2026-07-31T13:15:44+09:00",
   "project_id": "otokagami",
   "rules": [
     {
@@ -104,13 +105,13 @@
       "version": "0.2.0"
     },
     {
-      "checksum": "eb2c62d883b84296644e6c71a0dd5dfee62dcb3273f93c2199992f9603b83468",
+      "checksum": "c3a3d892c61e4fa369ce045be9309ba6da2b7ab444880d3812c95a93848fab76",
       "id": "G-06",
       "overrideable": false,
       "path": "rules/global/G-06-approvals.md",
       "scope": "global",
       "severity": "require",
-      "version": "0.4.0"
+      "version": "0.4.5"
     },
     {
       "checksum": "7eec7893f1bf2e62d0ad1d81bcf524af37fb8a5e0f7b2cae7ef56a0793c2a243",
@@ -176,13 +177,13 @@
       "version": "0.3.0"
     },
     {
-      "checksum": "9e4a26c33eb9efa2b02505d2ea9c4aa1d5892983aabc587f0a81fb769aa29915",
+      "checksum": "679e7757af3d58d8b74b8d66c44b718ecf38e16628442b814b9bd0fe70f66b9a",
       "id": "G-14",
       "overrideable": true,
       "path": "rules/global/G-14-autonomous-git-delivery.md",
       "scope": "global",
       "severity": "require",
-      "version": "0.4.0"
+      "version": "0.4.5"
     },
     {
       "checksum": "730e2227ad01849da24fa0b6b44fbd58954d2e2d01e767fd269745c043736a5d",
@@ -212,13 +213,13 @@
       "version": "0.2.0"
     },
     {
-      "checksum": "ed6b1adee232f520b623c84ab1372c33590288f3b82ffc79de6746a2c84a6932",
+      "checksum": "508f046bcc19b50a0f03120d1718221dafef5a1e4dbceff4a1ddeb611bd5adc1",
       "id": "C-APP-02",
       "overrideable": false,
       "path": "rules/categories/app/C-APP-02-production-change.md",
       "scope": "category:app",
       "severity": "deny",
-      "version": "0.2.0"
+      "version": "0.4.5"
     },
     {
       "checksum": "d20a57f5ee724798bdbe4965d5af2bf7bab162ce5b45e1135cd47bdca50ff383",
@@ -284,15 +285,15 @@
       "version": "0.2.0"
     },
     {
-      "checksum": "ade6708cdace5973d0b93a8cfd8cf8bc86c8af7a8a496db480783a401ce6bb93",
+      "checksum": "5c4c0c15e30c5f70bde4e19986794f4b98d551bb2474d0b1740f64d344776520",
       "id": "P-OTOKAGAMI-02",
       "overrideable": false,
       "path": "rules/projects/otokagami/P-OTOKAGAMI-02-governance.md",
       "scope": "project:otokagami",
       "severity": "require",
-      "version": "0.2.0"
+      "version": "0.4.5"
     }
   ],
   "schema_version": "2.0.0",
-  "source_commit": "b7b4342fd98e8b31b60500ac32d8ad27ee2304dc"
+  "source_commit": "ef741d322b1e2c9fa5b19851e0730439e9e1eb00"
 }

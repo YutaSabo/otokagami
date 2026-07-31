@@ -1,8 +1,8 @@
 <!-- AI-CONFIG:BEGIN MANAGED -->
 <!--
 GENERATED MANAGED BLOCK — DO NOT EDIT THIS BLOCK DIRECTLY.
-Source: ai-configuration b7b4342fd98e8b31b60500ac32d8ad27ee2304dc
-Generated at: 2026-07-31T11:27:54+09:00
+Source: ai-configuration ef741d322b1e2c9fa5b19851e0730439e9e1eb00
+Generated at: 2026-07-31T13:15:44+09:00
 Project: otokagami
 -->
 
@@ -23,11 +23,12 @@ decisions, and work logs remain in the linked Todoist project.
 - Todoist Project reference: `runtime-resolved:todoist-project`
 - Git delivery: `autonomous`
 - Merge policy: `pull-request-only`
+- Preview deployment on push: `allowed`
 - Default branch: `main`
 - Risk profiles: `production-deployment`, `personal-data`, `external-write`, `destructive-database`, `paid-service`
 - Adoption state: `planned`
-- Source commit: `b7b4342fd98e8b31b60500ac32d8ad27ee2304dc`
-- Generated at: `2026-07-31T11:27:54+09:00`
+- Source commit: `ef741d322b1e2c9fa5b19851e0730439e9e1eb00`
+- Generated at: `2026-07-31T13:15:44+09:00`
 
 ## Required startup
 
@@ -41,6 +42,10 @@ Before substantive work:
    overlapping active branches.
 4. Read the Project-owned specifications and setup files in this repository.
 5. State the requested scope and completion conditions.
+
+Before every `git push`, run `ai-config push-gate --project-root .`. Continue only
+when it reports `push_allowed: true`. An `allowed` result authorizes only the recorded
+non-production branch Preview effect; Production deployment remains a separate gate.
 
 The `ai-configuration` repository is canonical for AI Rules. This generated block is a
 released runtime copy. Project code, product and technical specifications, and human
@@ -72,6 +77,8 @@ explicitly assigned by the person.
 - `database.unapproved-production-reset` → `RP-DESTRUCTIVE-DATABASE`
 
 - `database.unapproved-truncate` → `RP-DESTRUCTIVE-DATABASE`
+
+- `deploy.preview` → `G-06`
 
 - `deploy.production` → `G-06`
 
@@ -260,10 +267,10 @@ Overrideable: `false`
 
 Classify authorization per operation. Reading, local changes, commit, push, pull-request
 creation, pull-request merge, external-service save, Todoist task completion, Notion
-save, public release, production deployment, destructive database work, paid
-commitment, live financial order, deletion, and history rewriting are separate
-operations. Authorization for one never implies authorization for another except for
-an explicitly defined, bounded standing authorization.
+save, public release, Preview deployment, Production deployment, destructive database
+work, paid commitment, live financial order, deletion, and history rewriting are
+separate operations. Authorization for one never implies authorization for another
+except for an explicitly defined, bounded standing authorization.
 
 Reading may proceed for in-scope diagnosis. Local changes and commits may proceed only
 when the request authorizes implementation. Every external or hard-to-recover operation
@@ -274,10 +281,14 @@ recorded in this configuration.
 For a Project whose released configuration enables autonomous Git delivery, an
 implementation request authorizes scoped commit, push, pull-request creation, and
 merge only while the autonomous-delivery safety gates remain satisfied. It never
-authorizes force-push, history rewrite, unrelated changes, production deployment,
-destructive database work, publication, payment, live financial operation, or deletion.
-If merging triggers one of those independent effects, the corresponding approval is
-still required.
+authorizes force-push, history rewrite, unrelated changes, Preview or Production
+deployment, destructive database work, publication, payment, live financial operation,
+or deletion. The Project's released `preview_deployment_on_push: allowed` state is the
+only standing authorization for the automatic, non-production branch Preview caused by
+that scoped push. It does not authorize Production, a manual deployment, a domain or
+analytics change, broader publication, secrets or permission changes, or paid capacity.
+If pushing or merging triggers any effect outside that exact boundary, the
+corresponding approval is still required.
 
 Verified Todoist work-log comments are standing-authorized. Todoist task completion
 always remains human-approved. A Cloud-to-Local handoff may carry authorization only
@@ -425,14 +436,30 @@ branches, create one scoped branch, stage only intended files, run applicable ch
 commit, push, and create or update a pull request without asking the person to choose
 Git commands.
 
+Before every push, inspect repository workflows, GitHub deployment/check evidence,
+hosting-provider configuration visible to the active runtime, and the released
+`.ai/project.yaml` plus `.ai/config.lock`. Run
+`ai-config push-gate --project-root .` when available. Interpret
+`preview_deployment_on_push` as follows:
+
+- `none`: a push-time Preview effect was verified absent; push may continue. If a
+  Preview unexpectedly appears, treat the state as `unknown` and stop further pushes.
+- `allowed`: the scoped branch push may create the recorded non-production Preview.
+- `blocked`: the Preview effect exists but is not authorized; stop before push.
+- `unknown` or an unset, invalid, or mismatched runtime value: stop before push.
+
+The Preview gate does not authorize Production deployment or any other independent
+external effect.
+
 Merge only when the pull request targets the expected base, is conflict-free, required
 checks pass, no unresolved review remains, branch protection is respected, the diff is
 still in scope, and merge does not implicitly perform an independently gated
 production, destructive, public, paid, or live-financial action. Use the Project's
 released merge policy; `pull-request-only` always stops before merge.
 
-Failure behavior: Keep the verified branch and pull request intact, record the exact failed gate, and ask
-only for the decision that cannot be derived safely.
+Failure behavior: Keep the verified local branch and any existing pull request intact, record the exact
+failed gate, and ask only for the deployment classification or other decision that
+cannot be derived safely.
 
 
 ### G-15 — Reconcile Cloud-to-Local external handoffs
@@ -500,8 +527,8 @@ Do not deploy an application to production or perform destructive production dat
 work without explicit authorization for the environment, change, validation evidence,
 rollback plan, and data impact.
 
-Failure behavior: Stop at the verified local or preview state and present the exact production action
-that remains gated.
+Failure behavior: Stop at the verified local state or, when separately permitted, the Preview state and
+present the exact Production action that remains gated.
 
 
 ### C-APP-03 — Enforce authorization on trusted servers
@@ -604,9 +631,11 @@ central configuration records only Codex operating boundaries.
 
 Run affected unit, integration, API, static-analysis, and build checks. Audio,
 microphone, permissions, latency, background, and release behavior require the
-Project's supported real-device checks and human acceptance. Do not merge, release,
-deploy, mutate production data, enable paid services, or change auth and storage
-boundaries under configuration-adoption authority.
+Project's supported real-device checks and human acceptance. The Registry's
+`preview_deployment_on_push: allowed` state authorizes only the automatic Vercel branch
+Preview caused by an in-scope push. Do not infer merge, release, Production deployment,
+production-data mutation, paid-service enablement, or auth and storage changes from
+that Preview authorization.
 
 Technical completion requires evidence for the affected platform. Management
 completion additionally requires device acceptance and separately approved merge or
@@ -619,7 +648,7 @@ release gate.
 ## Active skill references
 
 
-- `create-project` — version `0.4.1`, scope `global`,
+- `create-project` — version `0.4.2`, scope `global`,
   canonical source `skills/global/create-project`, status `canonical`
 
 - `sync-runtime-handoffs` — version `0.4.0`, scope `global`,
