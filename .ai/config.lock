@@ -1,18 +1,18 @@
 {
-  "ai_configuration_version": "0.4.5",
-  "compiler_version": "0.4.5",
-  "generated_at": "2026-07-31T13:15:44+09:00",
+  "ai_configuration_version": "0.4.7",
+  "compiler_version": "0.4.7",
+  "generated_at": "2026-07-31T14:57:46+09:00",
   "git_delivery": {
     "default_branch": "main",
     "merge_policy": "pull-request-only",
     "mode": "autonomous",
     "preview_deployment_on_push": "allowed",
-    "production_on_merge": "unknown"
+    "production_on_merge": true
   },
   "output_checksums": {
-    "AGENTS.md": "6fe5a94dcf91f2a2432813849eab0f75e3241497a0c0f2342b11ccd58bb2498a",
-    "rules.manifest.json": "d36cc5f5b8a4b179da891e71aeef9984b448b9378a2cd1b27eb2c8549fdca6fa",
-    "skills.manifest.json": "64ae2a851fc77ae4c28536dd54f521cc2ab437c9fe6101ba7cd9a47c3b4a5274"
+    "AGENTS.md": "6ef5c8f3684ce1ecd8f11090ee031f22c3234eab03283ad6d0b5750c5493a211",
+    "rules.manifest.json": "6e9f0e773530671fc8ec6239de68025fd4ce0b3e8a01e9564990ed94127b064c",
+    "skills.manifest.json": "bb17eae0aa5ba71b66582d4e128123af89061a5d0db3cb9f249ea0c000024f42"
   },
   "primary_category": "app",
   "project_id": "otokagami",
@@ -44,7 +44,7 @@
     "G-15": "730e2227ad01849da24fa0b6b44fbd58954d2e2d01e767fd269745c043736a5d",
     "G-16": "c4264ba3f70da5c7461b4ae7d114e37e0088105b2239bfb3fb14cf3b97180b58",
     "P-OTOKAGAMI-01": "3747dc88063b1d5fe669a3d46affd4d412e2ea82dd985be2c26eaee1ab1b6165",
-    "P-OTOKAGAMI-02": "5c4c0c15e30c5f70bde4e19986794f4b98d551bb2474d0b1740f64d344776520",
+    "P-OTOKAGAMI-02": "ad4b29cba1b13304f1e7f48711c75ab7b8eecac402cfeb286d6e5428bfb90c19",
     "RP-DESTRUCTIVE-DATABASE": "0e6523a4b0c7b72bb7ede379f541c96ba0e003179c21da0fba366c422116f9b1",
     "RP-EXTERNAL-WRITE": "ac5a6e442b1fcc8525df51e7df43e134a8fd9d9c9f0b008524da750f30267243",
     "RP-PAID-SERVICE": "abf86bdb90b70db49561447728055245f3f7f3d2e5549f6bfa2a084a48ab17ab",
@@ -88,6 +88,6 @@
     "create-project",
     "sync-runtime-handoffs"
   ],
-  "source_commit": "ef741d322b1e2c9fa5b19851e0730439e9e1eb00",
-  "source_tag": "v0.4.5"
+  "source_commit": "ac61a5e6e74e9cda10b78cff017a2f6452ec4929",
+  "source_tag": "v0.4.7"
 }

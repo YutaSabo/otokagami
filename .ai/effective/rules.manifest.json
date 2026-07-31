@@ -56,7 +56,7 @@
     "work.scope": "G-05",
     "work.start": "G-02"
   },
-  "generated_at": "2026-07-31T13:15:44+09:00",
+  "generated_at": "2026-07-31T14:57:46+09:00",
   "project_id": "otokagami",
   "rules": [
     {
@@ -285,15 +285,15 @@
       "version": "0.2.0"
     },
     {
-      "checksum": "5c4c0c15e30c5f70bde4e19986794f4b98d551bb2474d0b1740f64d344776520",
+      "checksum": "ad4b29cba1b13304f1e7f48711c75ab7b8eecac402cfeb286d6e5428bfb90c19",
       "id": "P-OTOKAGAMI-02",
       "overrideable": false,
       "path": "rules/projects/otokagami/P-OTOKAGAMI-02-governance.md",
       "scope": "project:otokagami",
       "severity": "require",
-      "version": "0.4.5"
+      "version": "0.4.7"
     }
   ],
   "schema_version": "2.0.0",
-  "source_commit": "ef741d322b1e2c9fa5b19851e0730439e9e1eb00"
+  "source_commit": "ac61a5e6e74e9cda10b78cff017a2f6452ec4929"
 }

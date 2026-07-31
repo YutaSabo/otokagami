@@ -1,8 +1,8 @@
 <!-- AI-CONFIG:BEGIN MANAGED -->
 <!--
 GENERATED MANAGED BLOCK — DO NOT EDIT THIS BLOCK DIRECTLY.
-Source: ai-configuration ef741d322b1e2c9fa5b19851e0730439e9e1eb00
-Generated at: 2026-07-31T13:15:44+09:00
+Source: ai-configuration ac61a5e6e74e9cda10b78cff017a2f6452ec4929
+Generated at: 2026-07-31T14:57:46+09:00
 Project: otokagami
 -->
 
@@ -27,8 +27,8 @@ decisions, and work logs remain in the linked Todoist project.
 - Default branch: `main`
 - Risk profiles: `production-deployment`, `personal-data`, `external-write`, `destructive-database`, `paid-service`
 - Adoption state: `planned`
-- Source commit: `ef741d322b1e2c9fa5b19851e0730439e9e1eb00`
-- Generated at: `2026-07-31T13:15:44+09:00`
+- Source commit: `ac61a5e6e74e9cda10b78cff017a2f6452ec4929`
+- Generated at: `2026-07-31T14:57:46+09:00`
 
 ## Required startup
 
@@ -636,6 +636,10 @@ Project's supported real-device checks and human acceptance. The Registry's
 Preview caused by an in-scope push. Do not infer merge, release, Production deployment,
 production-data mutation, paid-service enablement, or auth and storage changes from
 that Preview authorization.
+
+GitHub deployment history confirms that commits merged to `main` create Vercel
+Production deployments. Keep the pull request unmerged until the person explicitly
+approves that Production effect immediately before merge.
 
 Technical completion requires evidence for the affected platform. Management
 completion additionally requires device acceptance and separately approved merge or

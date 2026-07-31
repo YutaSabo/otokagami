@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-31T13:15:44+09:00",
+  "generated_at": "2026-07-31T14:57:46+09:00",
   "project_id": "otokagami",
   "schema_version": "2.0.0",
   "skills": [
@@ -22,5 +22,5 @@
       "version": "0.4.0"
     }
   ],
-  "source_commit": "ef741d322b1e2c9fa5b19851e0730439e9e1eb00"
+  "source_commit": "ac61a5e6e74e9cda10b78cff017a2f6452ec4929"
 }
