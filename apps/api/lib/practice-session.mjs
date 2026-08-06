@@ -2,7 +2,6 @@ import { ApiError, ok, readJson } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
 import { getOrCreateTtsReference } from "./tts.mjs";
 
-const DIFFICULTY_RANK = { high: 3, medium: 2, low: 1 };
 const DAILY_SLOTS = [
   { slotType: "weak", itemType: "word" },
   { slotType: "weak", itemType: "word" },
@@ -43,8 +42,7 @@ function compareDueDate(a, b) {
 }
 
 function comparePracticeItems(a, b) {
-  return DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
-    a.practiceItemId.localeCompare(b.practiceItemId);
+  return a.practiceItemId.localeCompare(b.practiceItemId);
 }
 
 function isUsableItem(item, itemType) {
@@ -57,7 +55,6 @@ function sortWeakCandidates(states) {
     .sort((a, b) => {
       return (
         Number(a.masteryEwma) - Number(b.masteryEwma) ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         compareNullableDate(a.lastPracticedDate, b.lastPracticedDate) ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
@@ -71,7 +68,6 @@ function sortWeakDrillCandidates(states) {
         Number(a.masteryEwma !== null && a.masteryEwma < 60) ||
       nullableNumber(a.masteryEwma) - nullableNumber(b.masteryEwma) ||
       compareDueDate(a.nextReviewDate, b.nextReviewDate) ||
-      DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
       a.phonemeId.localeCompare(b.phonemeId)
     );
   });
@@ -83,7 +79,6 @@ function sortNewCandidates(states) {
     .sort((a, b) => {
       return (
         Number(b.practiceCount === 0) - Number(a.practiceCount === 0) ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
     });
@@ -96,7 +91,6 @@ function sortReviewCandidates(states, today) {
       return (
         compareNullableDate(a.nextReviewDate, b.nextReviewDate) ||
         nullableNumber(a.masteryEwma) - nullableNumber(b.masteryEwma) ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
     });
@@ -248,8 +242,7 @@ async function loadSelectionData(supabase, userId) {
       reviewStage: state?.review_stage ?? 0,
       nextReviewDate: state?.next_review_date ?? null,
       practiceCount: state?.practice_count ?? 0,
-      lastPracticedDate: state?.last_practiced_date ?? null,
-      jaDifficulty: phoneme.ja_difficulty
+      lastPracticedDate: state?.last_practiced_date ?? null
     };
   });
 
@@ -261,7 +254,6 @@ async function loadSelectionData(supabase, userId) {
       normalizedText: item.normalized_text,
       expectedIpa: item.expected_ipa,
       targetPhonemeIds: targetsByItem.get(item.practice_item_id) ?? [],
-      jaDifficulty: item.ja_difficulty,
       isActive: item.is_active
     }))
     .filter((item) => item.targetPhonemeIds.length > 0);

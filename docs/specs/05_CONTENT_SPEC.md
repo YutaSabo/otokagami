@@ -20,51 +20,51 @@
 
 MVPの子音IDは24個。
 
-| phoneme_id | IPA | 例 | 日本語話者難易度 |
-| --- | --- | --- | --- |
-| `p` | /p/ | pen | low |
-| `b` | /b/ | boy | medium |
-| `t` | /t/ | tea | low |
-| `d` | /d/ | day | medium |
-| `k` | /k/ | key | low |
-| `g` | /g/ | go | low |
-| `f` | /f/ | fan | medium |
-| `v` | /v/ | van | high |
-| `theta` | /θ/ | think | high |
-| `dh` | /ð/ | this | high |
-| `s` | /s/ | see | low |
-| `z` | /z/ | zoo | medium |
-| `sh` | /ʃ/ | she | medium |
-| `zh` | /ʒ/ | vision | medium |
-| `h` | /h/ | he | low |
-| `ch` | /tʃ/ | cheese | medium |
-| `j` | /dʒ/ | judge | medium |
-| `m` | /m/ | me | low |
-| `n` | /n/ | no | low |
-| `ng` | /ŋ/ | sing | medium |
-| `l` | /l/ | light | high |
-| `r` | /r/ | right | high |
-| `w` | /w/ | we | medium |
-| `y` | /j/ | yes | low |
+| phoneme_id | IPA | 例 |
+| --- | --- | --- |
+| `p` | /p/ | pen |
+| `b` | /b/ | boy |
+| `t` | /t/ | tea |
+| `d` | /d/ | day |
+| `k` | /k/ | key |
+| `g` | /g/ | go |
+| `f` | /f/ | fan |
+| `v` | /v/ | van |
+| `theta` | /θ/ | think |
+| `dh` | /ð/ | this |
+| `s` | /s/ | see |
+| `z` | /z/ | zoo |
+| `sh` | /ʃ/ | she |
+| `zh` | /ʒ/ | vision |
+| `h` | /h/ | he |
+| `ch` | /tʃ/ | cheese |
+| `j` | /dʒ/ | judge |
+| `m` | /m/ | me |
+| `n` | /n/ | no |
+| `ng` | /ŋ/ | sing |
+| `l` | /l/ | light |
+| `r` | /r/ | right |
+| `w` | /w/ | we |
+| `y` | /j/ | yes |
 
 ## 単母音
 
 MVPの単母音IDは12個。
 
-| phoneme_id | IPA | 例 | 日本語話者難易度 |
-| --- | --- | --- | --- |
-| `iy` | /i/ | see | medium |
-| `ih` | /ɪ/ | sit | high |
-| `eh` | /ɛ/ | bed | medium |
-| `ae` | /æ/ | cat | high |
-| `aa` | /ɑ/ | hot | medium |
-| `ao` | /ɔ/ | thought | medium |
-| `uh` | /ʊ/ | book | high |
-| `uw` | /u/ | food | medium |
-| `ah` | /ʌ/ | cup | high |
-| `ax` | /ə/ | about | medium |
-| `er` | /ɝ/ | bird | high |
-| `a` | /ə/ or reduced vowel | unstressed a | medium |
+| phoneme_id | IPA | 例 |
+| --- | --- | --- |
+| `iy` | /i/ | see |
+| `ih` | /ɪ/ | sit |
+| `eh` | /ɛ/ | bed |
+| `ae` | /æ/ | cat |
+| `aa` | /ɑ/ | hot |
+| `ao` | /ɔ/ | thought |
+| `uh` | /ʊ/ | book |
+| `uw` | /u/ | food |
+| `ah` | /ʌ/ | cup |
+| `ax` | /ə/ | about |
+| `er` | /ɝ/ | bird |
+| `a` | /ə/ or reduced vowel | unstressed a |
 
 `ax` と `a` はMVP実装時にAzure/IPA変換の返却に合わせて正規化する。DB主キーとしては両方を持つが、UIでは必要に応じて同じ説明文を使ってよい。
 
@@ -72,40 +72,40 @@ MVPの単母音IDは12個。
 
 MVPの二重母音IDは5個。
 
-| phoneme_id | IPA | 例 | 日本語話者難易度 |
-| --- | --- | --- | --- |
-| `ey` | /eɪ/ | day | medium |
-| `ay` | /aɪ/ | my | medium |
-| `oy` | /ɔɪ/ | boy | medium |
-| `aw` | /aʊ/ | now | medium |
-| `ow` | /oʊ/ | go | medium |
+| phoneme_id | IPA | 例 |
+| --- | --- | --- |
+| `ey` | /eɪ/ | day |
+| `ay` | /aɪ/ | my |
+| `oy` | /ɔɪ/ | boy |
+| `aw` | /aʊ/ | now |
+| `ow` | /oʊ/ | go |
 
 ## 子音連結グループ
 
 子音連結は音素そのものではなく、出題タグとして扱う。
 
-| cluster_id | 例 | 日本語話者難易度 |
-| --- | --- | --- |
-| `str` | street | high |
-| `spr` | spring | high |
-| `spl` | split | high |
-| `skr` | screen | high |
-| `skw` | square | high |
-| `tr` | tree | medium |
-| `dr` | dream | medium |
-| `br` | brown | medium |
-| `gr` | green | medium |
-| `pr` | price | medium |
-| `fl` | fly | medium |
-| `gl` | glass | medium |
-| `kl` | clean | medium |
-| `pl` | play | medium |
-| `kt` | asked | high |
-| `pt` | stopped | high |
-| `ld` | world | high |
-| `nd` | hand | medium |
-| `nt` | want | medium |
-| `mp` | jump | medium |
+| cluster_id | 例 |
+| --- | --- |
+| `str` | street |
+| `spr` | spring |
+| `spl` | split |
+| `skr` | screen |
+| `skw` | square |
+| `tr` | tree |
+| `dr` | dream |
+| `br` | brown |
+| `gr` | green |
+| `pr` | price |
+| `fl` | fly |
+| `gl` | glass |
+| `kl` | clean |
+| `pl` | play |
+| `kt` | asked |
+| `pt` | stopped |
+| `ld` | world |
+| `nd` | hand |
+| `nt` | want |
+| `mp` | jump |
 
 子音連結グループは `practice_items.target_cluster_ids` に保存する。`phoneme_state` は音素単位で更新し、cluster専用の習熟度テーブルはMVPでは作らない。
 
@@ -133,10 +133,10 @@ MVPの二重母音IDは5個。
 MVPローンチ時点では、少なくとも次を用意する。
 
 - 全音素40前後に対応する練習パック。
-- 日本語話者の頻出混同ペアに対する直し方ページ優先10〜15件。
+- 初期検証対象とする代表混同ペアの直し方ページ10〜15件。
 - 優先直し方ページに対応する図解アセット。
 
-優先対象は、L/R、TH、母音長、V/B、シに寄る `theta`、語末子音を中心にする。
+優先対象は、L/R、TH、母音長、V/B、`theta` と `s` / `t` の混同、語末子音を中心にする。これは初回リリースで検証する対象であり、利用者の国籍・母語を限定するものではない。
 
 残りの直し方ページは合計30〜50件を順次追加する。MVP完了のブロッカーにはしない。
 
@@ -154,7 +154,6 @@ MVPローンチ時点では、少なくとも次を用意する。
 | `target_cluster_ids` | 子音連結タグ。該当なしは空配列。 |
 | `expected_ipa` | 表示用IPA。 |
 | `accent` | `US`。 |
-| `ja_difficulty` | `high`、`medium`、`low`。 |
 | `source` | `seed_ai_generated`、`manual_reviewed` など。 |
 | `is_active` | 出題対象か。 |
 
@@ -184,7 +183,7 @@ seed全量は別工程で生成する。生成スクリプトの仕様はこの�
 
 ## MVP混同ペア
 
-MVPでは、頻出の日本語話者向け混同ペアとして以下を直し方ページの対象にする。
+MVPでは、初期検証対象とする代表混同ペアとして以下を直し方ページの対象にする。これは実装・検証範囲を定める候補リストであり、特定の国籍・母語に対するスコア補正や出題制限には使わない。
 
 | confusion_pair_id | 期待 | 実測 | 優先度 |
 | --- | --- | --- | --- |

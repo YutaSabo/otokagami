@@ -249,10 +249,9 @@ begin
       text,
       normalized_text,
       accent,
-      ja_difficulty,
       source
     )
-    values ('rls_forbidden_item', 'word', 'forbidden', 'forbidden', 'US', 'low', 'manual_reviewed');
+    values ('rls_forbidden_item', 'word', 'forbidden', 'forbidden', 'US', 'manual_reviewed');
     raise exception 'RLS failed: authenticated client inserted practice_items';
   exception
     when insufficient_privilege then null;

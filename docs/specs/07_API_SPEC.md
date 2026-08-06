@@ -132,7 +132,7 @@ Request:
 
 1. JWTを検証する。
 2. アクセス権を確認する。
-3. `mode = weak_drill` の場合、`phoneme_state.mastery_ewma` が低い音素、`next_review_date <= 今日`、`ja_difficulty` を優先して出題する。
+3. `mode = weak_drill` の場合、`phoneme_state.mastery_ewma` が低い音素、`next_review_date <= 今日`、音素IDの順で出題する。国籍・母語による優先度は持たせない。
 4. `mode = phoneme_select` の場合、指定 `phoneme_id` をターゲットに持つ `practice_items` から出題する。
 5. 出題対象は `practice_items.is_active = true` のパック問題に限定する。
 6. 返却した問題は `/api/assess` の `practice_mode = weak_drill` または `phoneme_select` で判定する。

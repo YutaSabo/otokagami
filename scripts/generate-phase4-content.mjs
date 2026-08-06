@@ -5,81 +5,79 @@ import { fileURLToPath } from "node:url";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const phonemes = [
-  ["p", "/p/", "consonant", "pen", "low"],
-  ["b", "/b/", "consonant", "boy", "medium"],
-  ["t", "/t/", "consonant", "tea", "low"],
-  ["d", "/d/", "consonant", "day", "medium"],
-  ["k", "/k/", "consonant", "key", "low"],
-  ["g", "/g/", "consonant", "go", "low"],
-  ["f", "/f/", "consonant", "fan", "medium"],
-  ["v", "/v/", "consonant", "van", "high"],
-  ["theta", "/θ/", "consonant", "think", "high"],
-  ["dh", "/ð/", "consonant", "this", "high"],
-  ["s", "/s/", "consonant", "see", "low"],
-  ["z", "/z/", "consonant", "zoo", "medium"],
-  ["sh", "/ʃ/", "consonant", "she", "medium"],
-  ["zh", "/ʒ/", "consonant", "vision", "medium"],
-  ["h", "/h/", "consonant", "he", "low"],
-  ["ch", "/tʃ/", "consonant", "cheese", "medium"],
-  ["j", "/dʒ/", "consonant", "judge", "medium"],
-  ["m", "/m/", "consonant", "me", "low"],
-  ["n", "/n/", "consonant", "no", "low"],
-  ["ng", "/ŋ/", "consonant", "sing", "medium"],
-  ["l", "/l/", "consonant", "light", "high"],
-  ["r", "/r/", "consonant", "right", "high"],
-  ["w", "/w/", "consonant", "we", "medium"],
-  ["y", "/j/", "consonant", "yes", "low"],
-  ["iy", "/i/", "monophthong", "see", "medium"],
-  ["ih", "/ɪ/", "monophthong", "sit", "high"],
-  ["eh", "/ɛ/", "monophthong", "bed", "medium"],
-  ["ae", "/æ/", "monophthong", "cat", "high"],
-  ["aa", "/ɑ/", "monophthong", "hot", "medium"],
-  ["ao", "/ɔ/", "monophthong", "thought", "medium"],
-  ["uh", "/ʊ/", "monophthong", "book", "high"],
-  ["uw", "/u/", "monophthong", "food", "medium"],
-  ["ah", "/ʌ/", "monophthong", "cup", "high"],
-  ["ax", "/ə/", "monophthong", "about", "medium"],
-  ["er", "/ɝ/", "monophthong", "bird", "high"],
-  ["a", "/ə/", "monophthong", "unstressed a", "medium"],
-  ["ey", "/eɪ/", "diphthong", "day", "medium"],
-  ["ay", "/aɪ/", "diphthong", "my", "medium"],
-  ["oy", "/ɔɪ/", "diphthong", "boy", "medium"],
-  ["aw", "/aʊ/", "diphthong", "now", "medium"],
-  ["ow", "/oʊ/", "diphthong", "go", "medium"],
-].map(([phoneme_id, ipa, category, example_word, ja_difficulty], index) => ({
+  ["p", "/p/", "consonant", "pen"],
+  ["b", "/b/", "consonant", "boy"],
+  ["t", "/t/", "consonant", "tea"],
+  ["d", "/d/", "consonant", "day"],
+  ["k", "/k/", "consonant", "key"],
+  ["g", "/g/", "consonant", "go"],
+  ["f", "/f/", "consonant", "fan"],
+  ["v", "/v/", "consonant", "van"],
+  ["theta", "/θ/", "consonant", "think"],
+  ["dh", "/ð/", "consonant", "this"],
+  ["s", "/s/", "consonant", "see"],
+  ["z", "/z/", "consonant", "zoo"],
+  ["sh", "/ʃ/", "consonant", "she"],
+  ["zh", "/ʒ/", "consonant", "vision"],
+  ["h", "/h/", "consonant", "he"],
+  ["ch", "/tʃ/", "consonant", "cheese"],
+  ["j", "/dʒ/", "consonant", "judge"],
+  ["m", "/m/", "consonant", "me"],
+  ["n", "/n/", "consonant", "no"],
+  ["ng", "/ŋ/", "consonant", "sing"],
+  ["l", "/l/", "consonant", "light"],
+  ["r", "/r/", "consonant", "right"],
+  ["w", "/w/", "consonant", "we"],
+  ["y", "/j/", "consonant", "yes"],
+  ["iy", "/i/", "monophthong", "see"],
+  ["ih", "/ɪ/", "monophthong", "sit"],
+  ["eh", "/ɛ/", "monophthong", "bed"],
+  ["ae", "/æ/", "monophthong", "cat"],
+  ["aa", "/ɑ/", "monophthong", "hot"],
+  ["ao", "/ɔ/", "monophthong", "thought"],
+  ["uh", "/ʊ/", "monophthong", "book"],
+  ["uw", "/u/", "monophthong", "food"],
+  ["ah", "/ʌ/", "monophthong", "cup"],
+  ["ax", "/ə/", "monophthong", "about"],
+  ["er", "/ɝ/", "monophthong", "bird"],
+  ["a", "/ə/", "monophthong", "unstressed a"],
+  ["ey", "/eɪ/", "diphthong", "day"],
+  ["ay", "/aɪ/", "diphthong", "my"],
+  ["oy", "/ɔɪ/", "diphthong", "boy"],
+  ["aw", "/aʊ/", "diphthong", "now"],
+  ["ow", "/oʊ/", "diphthong", "go"],
+].map(([phoneme_id, ipa, category, example_word], index) => ({
   phoneme_id,
   ipa,
   category,
   example_word,
-  ja_difficulty,
   sort_order: (index + 1) * 10,
 }));
 
 const clusters = [
-  ["str", "street", "high"],
-  ["spr", "spring", "high"],
-  ["spl", "split", "high"],
-  ["skr", "screen", "high"],
-  ["skw", "square", "high"],
-  ["tr", "tree", "medium"],
-  ["dr", "dream", "medium"],
-  ["br", "brown", "medium"],
-  ["gr", "green", "medium"],
-  ["pr", "price", "medium"],
-  ["fl", "fly", "medium"],
-  ["gl", "glass", "medium"],
-  ["kl", "clean", "medium"],
-  ["pl", "play", "medium"],
-  ["kt", "asked", "high"],
-  ["pt", "stopped", "high"],
-  ["ld", "world", "high"],
-  ["nd", "hand", "medium"],
-  ["nt", "want", "medium"],
-  ["mp", "jump", "medium"],
-].map(([cluster_id, example_word, ja_difficulty], index) => ({
+  ["str", "street"],
+  ["spr", "spring"],
+  ["spl", "split"],
+  ["skr", "screen"],
+  ["skw", "square"],
+  ["tr", "tree"],
+  ["dr", "dream"],
+  ["br", "brown"],
+  ["gr", "green"],
+  ["pr", "price"],
+  ["fl", "fly"],
+  ["gl", "glass"],
+  ["kl", "clean"],
+  ["pl", "play"],
+  ["kt", "asked"],
+  ["pt", "stopped"],
+  ["ld", "world"],
+  ["nd", "hand"],
+  ["nt", "want"],
+  ["mp", "jump"],
+].map(([cluster_id, example_word], index) => ({
   cluster_id,
   example_word,
-  ja_difficulty,
   sort_order: (index + 1) * 10,
 }));
 
@@ -176,9 +174,9 @@ const advicePages = [
   ["uh_to_uw", "uh_to_uw", null, "UHがUWに聞こえる", "唇を丸めすぎず、短く中央寄りに出します。長く強くするとUWに近づきます。", "UHは短く浅い丸め、UWは長く強い丸めです。", "book boot", "asset_pair_uh_to_uw"],
   ["final_t_missing", "final_t_missing", null, "語末Tが消える", "最後に息を止めるだけで終えず、軽くTの閉鎖を作ります。大きく破裂させなくても輪郭を残します。", "語末Tは小さくても閉鎖の気配が必要です。", "right", "asset_generic_final_consonant"],
   ["final_d_missing", "final_d_missing", null, "語末Dが消える", "語末で声を急に落とさず、舌先でDの終わりを作ります。母音を足さず短く閉じます。", "語末Dは母音を追加せず、短い有声の閉鎖で終えます。", "road", "asset_generic_final_consonant"],
-  ["final_s_missing", "final_s_missing", null, "語末Sが消える", "最後まで細い息を残してSを出します。日本語の母音を足さず、息だけで終えます。", "語末Sは母音なしで摩擦を残す音です。", "rice", "asset_generic_final_consonant"],
+  ["final_s_missing", "final_s_missing", null, "語末Sが消える", "最後まで細い息を残してSを出します。余分な母音を足さず、息だけで終えます。", "語末Sは母音なしで摩擦を残す音です。", "rice", "asset_generic_final_consonant"],
   ["generic_consonant_ja_us", null, "generic_consonant", "子音をはっきり作る", "口の形、舌の位置、息の出し方を一つずつ分けて確認します。まず音の始まりをゆっくり作りましょう。", null, "right light", "asset_generic_consonant"],
-  ["generic_vowel_ja_us", null, "generic_vowel", "母音の形を整える", "口の開き、舌の高さ、長さをそろえます。日本語の母音に置き換えず、短く録音して差を聞きます。", null, "sit seat", "asset_generic_vowel"],
+  ["generic_vowel_ja_us", null, "generic_vowel", "母音の形を整える", "口の開き、舌の高さ、長さをそろえます。別の母音に置き換えず、短く録音して差を聞きます。", null, "sit seat", "asset_generic_vowel"],
   ["generic_final_consonant_ja_us", null, "generic_final_consonant", "語末子音を残す", "最後に母音を足さず、子音だけで短く終えます。小さくても閉鎖や摩擦の輪郭を残します。", null, "right road rice", "asset_generic_final_consonant"],
   ["generic_cluster_ja_us", null, "generic_cluster", "子音連結を分けて作る", "子音を一つずつ遅くつなぎ、間に母音を入れない練習をします。慣れたら速度を戻します。", null, "street spring play", "asset_generic_cluster"],
   ["generic_unknown_ja_us", null, "generic_unknown", "音の差を確認する", "お手本をゆっくり聞き、違っている音の口の形から確認します。短い単語で録音を比べましょう。", null, "practice again", "asset_generic_unknown"],
@@ -221,7 +219,6 @@ for (const phoneme of phonemes) {
       text: word,
       normalizedText: normalized(word),
       expectedIpa: activeIpa ?? null,
-      difficulty: phoneme.ja_difficulty,
       source: activeReviewed.has(id) ? "manual_reviewed" : "seed_ai_generated",
       active: activeReviewed.has(id),
     });
@@ -242,7 +239,6 @@ for (const phoneme of phonemes) {
       text,
       normalizedText: normalized(text),
       expectedIpa: activeReviewed.get(id) ?? null,
-      difficulty: phoneme.ja_difficulty,
       source: activeReviewed.has(id) ? "manual_reviewed" : "seed_ai_generated",
       active: activeReviewed.has(id),
     });
@@ -265,7 +261,6 @@ for (const cluster of clusters) {
       text: word,
       normalizedText: normalized(word),
       expectedIpa: null,
-      difficulty: cluster.ja_difficulty,
       source: "seed_ai_generated",
       active: false,
     });
@@ -286,7 +281,6 @@ for (const cluster of clusters) {
       text,
       normalizedText: normalized(text),
       expectedIpa: null,
-      difficulty: cluster.ja_difficulty,
       source: "seed_ai_generated",
       active: false,
     });
@@ -304,7 +298,7 @@ function makeSeedSql() {
 -- Phase 4 content uses the review gate: newly generated candidates are inactive
 -- until a human review promotes them to manual_reviewed/is_active = true.
 
-insert into public.phonemes (phoneme_id, ipa, category, example_word, ja_difficulty, sort_order, is_active)
+insert into public.phonemes (phoneme_id, ipa, category, example_word, sort_order, is_active)
 values
 ${rows(
   phonemes.map((p) => [
@@ -312,7 +306,6 @@ ${rows(
     sqlString(p.ipa),
     sqlString(p.category),
     sqlString(p.example_word),
-    sqlString(p.ja_difficulty),
     p.sort_order,
     "true",
   ]),
@@ -321,24 +314,21 @@ on conflict (phoneme_id) do update set
   ipa = excluded.ipa,
   category = excluded.category,
   example_word = excluded.example_word,
-  ja_difficulty = excluded.ja_difficulty,
   sort_order = excluded.sort_order,
   is_active = excluded.is_active;
 
-insert into public.phoneme_clusters (cluster_id, example_word, ja_difficulty, sort_order, is_active)
+insert into public.phoneme_clusters (cluster_id, example_word, sort_order, is_active)
 values
 ${rows(
   clusters.map((c) => [
     sqlString(c.cluster_id),
     sqlString(c.example_word),
-    sqlString(c.ja_difficulty),
     c.sort_order,
     "true",
   ]),
 )}
 on conflict (cluster_id) do update set
   example_word = excluded.example_word,
-  ja_difficulty = excluded.ja_difficulty,
   sort_order = excluded.sort_order,
   is_active = excluded.is_active;
 
@@ -357,7 +347,6 @@ insert into public.practice_items (
   normalized_text,
   expected_ipa,
   accent,
-  ja_difficulty,
   source,
   is_active
 )
@@ -370,7 +359,6 @@ ${rows(
     sqlString(item.normalizedText),
     sqlString(item.expectedIpa),
     sqlString("US"),
-    sqlString(item.difficulty),
     sqlString(item.source),
     item.active ? "true" : "false",
   ]),
@@ -381,7 +369,6 @@ on conflict (practice_item_id) do update set
   normalized_text = excluded.normalized_text,
   expected_ipa = excluded.expected_ipa,
   accent = excluded.accent,
-  ja_difficulty = excluded.ja_difficulty,
   source = excluded.source,
   is_active = excluded.is_active;
 

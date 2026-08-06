@@ -60,9 +60,8 @@
 優先順:
 
 1. `phoneme_state.mastery_ewma` が低い。
-2. `ja_difficulty` が高い。
-3. `last_practiced_date` が古い。
-4. 音素IDの昇順。
+2. `last_practiced_date` が古い。
+3. 音素IDの昇順。
 
 `mastery_ewma` が null の音素は苦手枠ではなく新規枠で扱う。
 
@@ -71,8 +70,7 @@
 優先順:
 
 1. `practice_count = 0`。
-2. `ja_difficulty` が高い。
-3. 音素IDの昇順。
+2. 音素IDの昇順。
 
 ### 復習枠
 
@@ -81,7 +79,7 @@
 1. `next_review_date <= 今日`。
 2. `next_review_date` が古い。
 3. `mastery_ewma` が低い。
-4. `ja_difficulty` が高い。
+4. 音素IDの昇順。
 
 ### フォールバック
 
@@ -398,7 +396,7 @@ MVPでは、条件が明確で追加コストのないバッジだけを実装�
 1. `mastery_ewma < 60`。
 2. `mastery_ewma` が低い。
 3. `next_review_date <= 今日`。
-4. `ja_difficulty` が高い。
+4. 音素IDの昇順。
 
 パック問題を使うため、結果は `attempts` に保存し、best attempt は集計対象にする。
 

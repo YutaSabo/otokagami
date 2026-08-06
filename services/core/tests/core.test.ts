@@ -48,9 +48,9 @@ test("EWMA uses first score as-is and then 0.3 score plus 0.7 old", () => {
 
 test("phoneme state updates only pack target phonemes and advances review per phoneme", () => {
   const states = makeStates([
-    ["r", 70, 1, "2026-07-01", 3, "2026-07-01", "high"],
-    ["l", 90, 2, "2026-07-01", 4, "2026-07-01", "high"],
-    ["theta", null, 0, null, 0, null, "high"]
+    ["r", 70, 1, "2026-07-01", 3, "2026-07-01"],
+    ["l", 90, 2, "2026-07-01", 4, "2026-07-01"],
+    ["theta", null, 0, null, 0, null]
   ]);
 
   const updated = updatePhonemeStatesForBestAttempt({
@@ -77,7 +77,7 @@ test("phoneme state updates only pack target phonemes and advances review per ph
 });
 
 test("free input does not update aggregation state", () => {
-  const states = makeStates([["r", 70, 1, "2026-07-01", 3, "2026-07-01", "high"]]);
+  const states = makeStates([["r", 70, 1, "2026-07-01", 3, "2026-07-01"]]);
 
   const updated = updatePhonemeStatesForBestAttempt({
     states,
@@ -108,9 +108,9 @@ test("best attempt uses target average, then overall, then later attempt number"
 
 test("overall mastery ignores unevaluated phonemes", () => {
   assert.equal(calculateOverallMastery(makeStates([
-    ["r", 80, 1, "2026-07-07", 1, "2026-07-04", "high"],
-    ["l", null, 0, null, 0, null, "high"],
-    ["v", 60, 0, "2026-07-05", 1, "2026-07-04", "medium"]
+    ["r", 80, 1, "2026-07-07", 1, "2026-07-04"],
+    ["l", null, 0, null, 0, null],
+    ["v", 60, 0, "2026-07-05", 1, "2026-07-04"]
   ])), 70);
 });
 
@@ -127,12 +127,12 @@ test("streak uses scored pack attempt dates only supplied by caller", () => {
 
 test("level, badges, and title follow MVP thresholds and priority", () => {
   const states = makeStates([
-    ["theta", 81, 1, "2026-07-05", 2, "2026-07-04", "high"],
-    ["dh", 20, 0, "2026-07-05", 1, "2026-07-04", "high"],
-    ["r", 70, 0, "2026-07-05", 1, "2026-07-04", "high"],
-    ["l", 90, 0, "2026-07-05", 1, "2026-07-04", "high"],
-    ["v", 80, 0, "2026-07-05", 1, "2026-07-04", "medium"],
-    ["b", 82, 0, "2026-07-05", 1, "2026-07-04", "medium"]
+    ["theta", 81, 1, "2026-07-05", 2, "2026-07-04"],
+    ["dh", 20, 0, "2026-07-05", 1, "2026-07-04"],
+    ["r", 70, 0, "2026-07-05", 1, "2026-07-04"],
+    ["l", 90, 0, "2026-07-05", 1, "2026-07-04"],
+    ["v", 80, 0, "2026-07-05", 1, "2026-07-04"],
+    ["b", 82, 0, "2026-07-05", 1, "2026-07-04"]
   ]);
 
   assert.equal(getLevel(50).level, 4);
@@ -191,12 +191,12 @@ test("daily selection falls back when new candidates are short and marks duplica
   const selected = selectDailyItems({
     today: "2026-07-04",
     phonemeStates: makeStates([
-      ["r", 50, 0, "2026-07-01", 3, "2026-07-01", "high"],
-      ["v", 65, 0, "2026-06-30", 2, "2026-07-01", "high"]
+      ["r", 50, 0, "2026-07-01", 3, "2026-07-01"],
+      ["v", 65, 0, "2026-06-30", 2, "2026-07-01"]
     ]),
     practiceItems: [
-      item("word_r_1", "word", ["r"], "high"),
-      item("sent_r_1", "sentence", ["r"], "high")
+      item("word_r_1", "word", ["r"]),
+      item("sent_r_1", "sentence", ["r"])
     ]
   });
 
@@ -265,41 +265,40 @@ function attempt(id: string, attemptNo: number, overallScore: number, targetScor
   };
 }
 
-function makeStates(rows: Array<[string, number | null, number, string | null, number, string | null, PhonemeState["jaDifficulty"]]>): PhonemeState[] {
-  return rows.map(([phonemeId, masteryEwma, reviewStage, nextReviewDate, practiceCount, lastPracticedDate, jaDifficulty]) => ({
+function makeStates(rows: Array<[string, number | null, number, string | null, number, string | null]>): PhonemeState[] {
+  return rows.map(([phonemeId, masteryEwma, reviewStage, nextReviewDate, practiceCount, lastPracticedDate]) => ({
     phonemeId,
     masteryEwma,
     reviewStage,
     nextReviewDate,
     practiceCount,
-    lastPracticedDate,
-    jaDifficulty
+    lastPracticedDate
   }));
 }
 
 function selectionStates(): PhonemeState[] {
   return makeStates([
-    ["r", 45, 0, "2026-07-10", 5, "2026-07-01", "high"],
-    ["l", 58, 0, "2026-07-10", 5, "2026-07-02", "high"],
-    ["theta", null, 0, null, 0, null, "high"],
-    ["dh", null, 0, null, 0, null, "high"],
-    ["v", 65, 1, "2026-07-03", 3, "2026-06-29", "medium"],
-    ["b", 75, 1, "2026-07-04", 3, "2026-06-30", "medium"]
+    ["r", 45, 0, "2026-07-10", 5, "2026-07-01"],
+    ["l", 58, 0, "2026-07-10", 5, "2026-07-02"],
+    ["theta", null, 0, null, 0, null],
+    ["dh", null, 0, null, 0, null],
+    ["v", 65, 1, "2026-07-03", 3, "2026-06-29"],
+    ["b", 75, 1, "2026-07-04", 3, "2026-06-30"]
   ]);
 }
 
 function practiceItems(): PracticeItem[] {
   return [
-    item("word_r_1", "word", ["r"], "high"),
-    item("word_r_2", "word", ["r"], "medium"),
-    item("sent_r_1", "sentence", ["r"], "high"),
-    item("word_l_1", "word", ["l"], "high"),
-    item("sent_l_1", "sentence", ["l"], "high"),
-    item("word_theta_1", "word", ["theta"], "high"),
-    item("word_dh_1", "word", ["dh"], "high"),
-    item("word_v_1", "word", ["v"], "medium"),
-    item("sent_b_1", "sentence", ["b"], "medium"),
-    item("word_inactive", "word", ["r"], "high", false)
+    item("word_r_1", "word", ["r"]),
+    item("word_r_2", "word", ["r"]),
+    item("sent_r_1", "sentence", ["r"]),
+    item("word_l_1", "word", ["l"]),
+    item("sent_l_1", "sentence", ["l"]),
+    item("word_theta_1", "word", ["theta"]),
+    item("word_dh_1", "word", ["dh"]),
+    item("word_v_1", "word", ["v"]),
+    item("sent_b_1", "sentence", ["b"]),
+    item("word_inactive", "word", ["r"], false)
   ];
 }
 
@@ -307,14 +306,12 @@ function item(
   practiceItemId: string,
   itemType: PracticeItem["itemType"],
   targetPhonemeIds: string[],
-  jaDifficulty: PracticeItem["jaDifficulty"],
   isActive = true
 ): PracticeItem {
   return {
     practiceItemId,
     itemType,
     targetPhonemeIds,
-    jaDifficulty,
     isActive
   };
 }
