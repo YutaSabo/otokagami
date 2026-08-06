@@ -1,7 +1,6 @@
 export type ScoreColor = "green" | "yellow" | "red";
 export type ItemType = "word" | "sentence";
 export type SlotType = "weak" | "new" | "review";
-export type Difficulty = "high" | "medium" | "low";
 
 export interface PhonemeResult {
   index: number;
@@ -34,14 +33,12 @@ export interface PhonemeState {
   nextReviewDate: string | null;
   practiceCount: number;
   lastPracticedDate: string | null;
-  jaDifficulty: Difficulty;
 }
 
 export interface PracticeItem {
   practiceItemId: string;
   itemType: ItemType;
   targetPhonemeIds: string[];
-  jaDifficulty: Difficulty;
   isActive: boolean;
 }
 
@@ -108,12 +105,6 @@ const REVIEW_INTERVAL_DAYS: Record<number, number> = {
   1: 3,
   2: 7,
   3: 14
-};
-
-const DIFFICULTY_RANK: Record<Difficulty, number> = {
-  high: 3,
-  medium: 2,
-  low: 1
 };
 
 const BADGES: BadgeAward[] = [
@@ -553,7 +544,6 @@ function sortWeakCandidates(states: PhonemeState[]): PhonemeState[] {
     .sort((a, b) => {
       return (
         a.masteryEwma! - b.masteryEwma! ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         compareNullableDate(a.lastPracticedDate, b.lastPracticedDate) ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
@@ -567,7 +557,6 @@ function sortWeakDrillCandidates(states: PhonemeState[]): PhonemeState[] {
         Number(a.masteryEwma !== null && a.masteryEwma < 60) ||
       nullableNumber(a.masteryEwma) - nullableNumber(b.masteryEwma) ||
       compareDueDate(a.nextReviewDate, b.nextReviewDate) ||
-      DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
       a.phonemeId.localeCompare(b.phonemeId)
     );
   });
@@ -579,7 +568,6 @@ function sortNewCandidates(states: PhonemeState[]): PhonemeState[] {
     .sort((a, b) => {
       return (
         Number(b.practiceCount === 0) - Number(a.practiceCount === 0) ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
     });
@@ -592,17 +580,13 @@ function sortReviewCandidates(states: PhonemeState[], today: string): PhonemeSta
       return (
         compareNullableDate(a.nextReviewDate, b.nextReviewDate) ||
         nullableNumber(a.masteryEwma) - nullableNumber(b.masteryEwma) ||
-        DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
         a.phonemeId.localeCompare(b.phonemeId)
       );
     });
 }
 
 function comparePracticeItems(a: PracticeItem, b: PracticeItem): number {
-  return (
-    DIFFICULTY_RANK[b.jaDifficulty] - DIFFICULTY_RANK[a.jaDifficulty] ||
-    a.practiceItemId.localeCompare(b.practiceItemId)
-  );
+  return a.practiceItemId.localeCompare(b.practiceItemId);
 }
 
 function isUsableItem(item: PracticeItem, itemType?: ItemType): boolean {

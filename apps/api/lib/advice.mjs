@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { ApiError, ok } from "./http.mjs";
 import { getPracticeContext } from "./practice-access.mjs";
 
-const PROMPT_VERSION = "phase7-short-advice-v1";
+const PROMPT_VERSION = "phase7-short-advice-v2";
 
 function cacheKeyForAdvice({ page, expectedPhonemeId, observedPhonemeId }) {
   const identity = {
@@ -55,7 +55,7 @@ async function callOpenAiAdvice({ config, page, expectedPhonemeId, observedPhone
         {
           role: "system",
           content:
-            "You rewrite pronunciation coaching tips for Japanese learners. Keep the answer in Japanese, one or two short lines, and do not add unverified claims."
+            "You rewrite pronunciation coaching tips for an English learner. Use the same language as the base tip, keep the answer to one or two short lines, do not assume the learner's nationality or native language, and do not add unverified claims."
         },
         {
           role: "user",

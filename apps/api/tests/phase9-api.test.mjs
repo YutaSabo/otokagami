@@ -277,7 +277,6 @@ function phoneme(phonemeId, sortOrder) {
     ipa: `/${phonemeId}/`,
     category: "consonant",
     example_word: phonemeId,
-    ja_difficulty: "high",
     sort_order: sortOrder,
     is_active: true
   };

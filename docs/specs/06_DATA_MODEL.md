@@ -129,7 +129,6 @@ RevenueCatから同期した購読状態。
 | `ipa` | text | yes | 表示IPA。 |
 | `category` | text | yes | `consonant`、`monophthong`、`diphthong`。 |
 | `example_word` | text | yes | 例語。 |
-| `ja_difficulty` | text | yes | `high`、`medium`、`low`。 |
 | `sort_order` | int | yes | 表示順。 |
 | `is_active` | boolean | yes | 出題対象か。 |
 
@@ -141,7 +140,6 @@ RevenueCatから同期した購読状態。
 | --- | --- | --- | --- |
 | `cluster_id` | text | yes | 主キー。例: `str`。 |
 | `example_word` | text | yes | 例語。 |
-| `ja_difficulty` | text | yes | `high`、`medium`、`low`。 |
 | `sort_order` | int | yes | 表示順。 |
 | `is_active` | boolean | yes | 出題対象か。 |
 
@@ -157,7 +155,6 @@ RevenueCatから同期した購読状態。
 | `normalized_text` | text | yes | 判定/IPA変換用。 |
 | `expected_ipa` | text | no | 表示用IPA。 |
 | `accent` | text | yes | MVPは `US`。 |
-| `ja_difficulty` | text | yes | 問題としての難易度。 |
 | `source` | text | yes | `seed_ai_generated`、`manual_reviewed`等。 |
 | `is_active` | boolean | yes | 出題対象か。 |
 | `created_at` | timestamptz | yes | 作成日時。 |

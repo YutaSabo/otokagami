@@ -131,17 +131,17 @@ function apiRequest(path, { method = "POST", body, token = "valid-token" } = {})
 function seedState({ expiredTrial = false, aiCache = [] } = {}) {
   const userId = "11111111-1111-4111-8111-111111111111";
   const practiceItems = [
-    item("word_r_001", "word", "right", "right", ["r"], "high"),
-    item("word_r_inactive", "word", "wrong r", "wrong r", ["r"], "high", false),
-    item("sent_r_001", "sentence", "Read it again.", "read it again", ["r"], "high"),
-    item("word_l_001", "word", "light", "light", ["l"], "high"),
-    item("sent_l_001", "sentence", "Light it up.", "light it up", ["l"], "high"),
-    item("word_theta_001", "word", "think", "think", ["theta"], "high"),
-    item("sent_theta_001", "sentence", "Think again.", "think again", ["theta"], "high"),
-    item("word_dh_001", "word", "this", "this", ["dh"], "high"),
-    item("word_ae_001", "word", "cat", "cat", ["ae"], "high"),
-    item("word_v_001", "word", "van", "van", ["v"], "high"),
-    item("sent_v_001", "sentence", "Move the van.", "move the van", ["v"], "high")
+    item("word_r_001", "word", "right", "right", ["r"]),
+    item("word_r_inactive", "word", "wrong r", "wrong r", ["r"], false),
+    item("sent_r_001", "sentence", "Read it again.", "read it again", ["r"]),
+    item("word_l_001", "word", "light", "light", ["l"]),
+    item("sent_l_001", "sentence", "Light it up.", "light it up", ["l"]),
+    item("word_theta_001", "word", "think", "think", ["theta"]),
+    item("sent_theta_001", "sentence", "Think again.", "think again", ["theta"]),
+    item("word_dh_001", "word", "this", "this", ["dh"]),
+    item("word_ae_001", "word", "cat", "cat", ["ae"]),
+    item("word_v_001", "word", "van", "van", ["v"]),
+    item("sent_v_001", "sentence", "Move the van.", "move the van", ["v"])
   ];
   const tts_cache = [];
   for (const row of practiceItems.filter((practiceItem) => practiceItem.is_active)) {
@@ -172,12 +172,12 @@ function seedState({ expiredTrial = false, aiCache = [] } = {}) {
     ],
     subscriptions: [],
     phonemes: [
-      phoneme("ae", "high", 10),
-      phoneme("dh", "high", 20),
-      phoneme("l", "high", 30),
-      phoneme("r", "high", 40),
-      phoneme("theta", "high", 50),
-      phoneme("v", "high", 60)
+      phoneme("ae", 10),
+      phoneme("dh", 20),
+      phoneme("l", 30),
+      phoneme("r", 40),
+      phoneme("theta", 50),
+      phoneme("v", 60)
     ],
     phoneme_state: [
       stateRow(userId, "r", 30, 5, "2026-07-01", "2026-07-02"),
@@ -230,13 +230,12 @@ function seedState({ expiredTrial = false, aiCache = [] } = {}) {
   };
 }
 
-function phoneme(phonemeId, jaDifficulty, sortOrder) {
+function phoneme(phonemeId, sortOrder) {
   return {
     phoneme_id: phonemeId,
     ipa: `/${phonemeId}/`,
     category: "consonant",
     example_word: phonemeId,
-    ja_difficulty: jaDifficulty,
     sort_order: sortOrder,
     is_active: true
   };
@@ -254,7 +253,7 @@ function stateRow(userId, phonemeId, mastery, practiceCount, lastPracticedDate, 
   };
 }
 
-function item(practiceItemId, itemType, text, normalizedText, targetPhonemeIds, jaDifficulty, isActive = true) {
+function item(practiceItemId, itemType, text, normalizedText, targetPhonemeIds, isActive = true) {
   return {
     practice_item_id: practiceItemId,
     item_type: itemType,
@@ -262,7 +261,6 @@ function item(practiceItemId, itemType, text, normalizedText, targetPhonemeIds, 
     normalized_text: normalizedText,
     expected_ipa: `/${normalizedText}/`,
     accent: "US",
-    ja_difficulty: jaDifficulty,
     source: isActive ? "manual_reviewed" : "seed_ai_generated",
     is_active: isActive,
     target_phoneme_ids: targetPhonemeIds
@@ -417,7 +415,7 @@ test("advice returns active template pages without OpenAI and uses ai_advice_cac
         target_accent: "US",
         confusion_pair_id: null,
         generic_advice_id: "generic_consonant",
-        prompt_version: "phase7-short-advice-v1",
+        prompt_version: "phase7-short-advice-v2",
         output_text: "キャッシュ済みの短い助言です。",
         last_used_at: "2026-07-04T00:00:00.000Z"
       }
@@ -476,6 +474,36 @@ test("advice returns active template pages without OpenAI and uses ai_advice_cac
   assert.equal(missState.ai_advice_cache.length, 1);
 });
 
+test("AI advice follows the localized base tip without assuming nationality or native language", async () => {
+  const state = seedState();
+  const baseFetch = createFetchMock(state);
+  let openAiBody;
+  const fetchImpl = async (url, options = {}) => {
+    if (new URL(url).origin === "https://api.openai.com") {
+      openAiBody = JSON.parse(options.body);
+      return jsonResponse({ output_text: "舌先を歯の間に置き、息を細く出します。" });
+    }
+    return baseFetch(url, options);
+  };
+
+  const generated = await getAdvice({
+    request: apiRequest("/api/advice/generic_consonant?expected_phoneme_id=theta&observed_phoneme_id=t", {
+      method: "GET"
+    }),
+    adviceId: "generic_consonant",
+    env,
+    now: new Date("2026-07-04T01:00:00.000Z"),
+    fetchImpl
+  });
+
+  assert.equal(generated.ai_source, "openai");
+  const systemPrompt = openAiBody.input.find((message) => message.role === "system").content;
+  assert.match(systemPrompt, /same language as the base tip/);
+  assert.match(systemPrompt, /do not assume the learner's nationality or native language/);
+  assert.doesNotMatch(systemPrompt, /Japanese learners?/);
+  assert.equal(state.ai_advice_cache[0].prompt_version, "phase7-short-advice-v2");
+});
+
 function cacheKeyForTest(page, expectedPhonemeId, observedPhonemeId) {
   const identity = {
     native_language: page.native_language,
@@ -484,7 +512,7 @@ function cacheKeyForTest(page, expectedPhonemeId, observedPhonemeId) {
     generic_advice_id: page.generic_advice_id,
     expected_phoneme_id: expectedPhonemeId,
     observed_phoneme_id: observedPhonemeId,
-    prompt_version: "phase7-short-advice-v1"
+    prompt_version: "phase7-short-advice-v2"
   };
   return `advice:${createHash("sha256").update(JSON.stringify(identity)).digest("hex")}`;
 }

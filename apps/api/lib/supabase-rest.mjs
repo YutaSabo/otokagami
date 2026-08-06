@@ -5,11 +5,11 @@ const PROFILE_SELECT =
 const INSTALLATION_SELECT = "id,device_install_id_hash,user_id,first_seen_at,last_seen_at";
 const SUBSCRIPTION_SELECT =
   "id,user_id,revenuecat_app_user_id,entitlement_id,product_id,status,is_active,current_period_started_at,current_period_ends_at,latest_event_at,raw_event";
-const PHONEME_SELECT = "phoneme_id,ipa,category,example_word,ja_difficulty,sort_order,is_active";
+const PHONEME_SELECT = "phoneme_id,ipa,category,example_word,sort_order,is_active";
 const PHONEME_STATE_SELECT =
   "user_id,phoneme_id,mastery_ewma,practice_count,last_practiced_date,next_review_date,review_stage";
 const PRACTICE_ITEM_SELECT =
-  "practice_item_id,item_type,text,normalized_text,expected_ipa,accent,ja_difficulty,source,is_active";
+  "practice_item_id,item_type,text,normalized_text,expected_ipa,accent,source,is_active";
 const PRACTICE_ITEM_TARGET_SELECT = "practice_item_id,target_type,target_id";
 const DAILY_SESSION_SELECT = "id,user_id,session_date,timezone,status,completed_count,created_at,completed_at";
 const DAILY_SESSION_ITEM_SELECT =

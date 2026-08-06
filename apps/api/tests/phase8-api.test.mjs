@@ -138,7 +138,6 @@ function seedState({ completedDailyItems = 0, existingAttempts = [], existingRes
         normalized_text: "right",
         expected_ipa: "/raɪt/",
         accent: "US",
-        ja_difficulty: "high",
         source: "manual_reviewed",
         is_active: true
       }
@@ -214,7 +213,6 @@ function phoneme(phonemeId, category) {
     ipa: `/${phonemeId}/`,
     category,
     example_word: phonemeId,
-    ja_difficulty: "high",
     sort_order: 1,
     is_active: true
   };
