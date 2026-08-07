@@ -51,16 +51,17 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 
 | ID | 分類 | 変更内容 | 対象 | 現在の状態 | リスク | 次回対応 | 最終確認日 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ESC-001 | 外部公開・アクセス制御 | Vercel ステージングのログイン保護を解除 | `otokagami-api-staging` | 有効・要見直し | 高 | テスト完了後に保護を再有効化するか判断 | 2026-07-12 |
-| ESC-002 | 外部デプロイ | Vercel ステージング API を公開デプロイ | `otokagami-api-staging` | 有効・要見直し | 中 | デプロイ先・環境変数・公開要否を点検 | 2026-07-12 |
-| ESC-003 | 認証・ローカル設定 | Vercel CLI のプロジェクト連携と環境変数取得 | ローカル作業ディレクトリ / Vercel | 有効・要見直し | 中 | `.vercel` と `.env.local` の追跡除外・不要時削除を確認 | 2026-07-12 |
-| ESC-004 | 配布・外部連携 | EAS Update の staging チャネルと TestFlight ステージング配布 | Expo / App Store Connect | 有効・必要 | 中 | 0.1.1 (8) のApple処理完了後にTestFlightテスターへの配布状態を確認 | 2026-07-13 |
+| ESC-001 | 外部公開・アクセス制御 | Vercel ステージングのログイン保護を解除 | `otokagami-api-staging` | 有効・要見直し | 高 | テスト完了後に保護を再有効化するか判断 | 2026-08-07 |
+| ESC-002 | 外部デプロイ | Vercel ステージング API を公開デプロイ | `otokagami-api-staging` | 有効・要見直し | 中 | 公開要否と接続先分離を点検 | 2026-08-07 |
+| ESC-003 | 認証・ローカル設定 | Vercel CLI のプロジェクト連携と環境変数取得 | ローカル作業ディレクトリ / Vercel | 有効・要見直し | 中 | `.vercel` と `.env.local` の追跡除外・不要時削除を確認 | 2026-08-07 |
+| ESC-004 | 配布・外部連携 | EAS Update の staging チャネルと TestFlight ステージング配布 | Expo / App Store Connect | 有効・必要 | 中 | 0.1.1 (8)/(9) の接続先を実機または保全済み配布物で確認 | 2026-08-07 |
 | ESC-005 | OS・常駐ドライバ | BlackHole 仮想オーディオドライバを導入 | macOS | 有効・要見直し | 中 | 自動テスト用途が不要になれば削除可否を判断 | 2026-07-12 |
 | ESC-006 | OS・シミュレーター設定 | 仮想オーディオを既定入出力・Simulator マイク入力に設定 | macOS / iOS Simulator | 一時的 | 中 | 音声テスト終了後に既定入力・出力を復元 | 2026-07-12 |
 | ESC-007 | 開発サーバー | Metro を LAN から到達可能な 8081 番ポートで待受 | ローカル PC / iOS Simulator | 一時的 | 低 | 開発終了時に停止し、不要な待受がないか確認 | 2026-07-12 |
 | ESC-008 | 提案・未実施 | 音声切替 CLI の追加導入 | macOS / Homebrew | 提案のみ・未実施 | 低 | 必要時のみ導入を再検討 | 2026-07-12 |
 | ESC-009 | プロジェクト依存 | Azure Speech iOS SDK 1.43をCocoaPodsで導入 | `apps/mobile/ios` | 有効・必要 | 低 | SDK更新時に互換性と公式サポート状況を再確認 | 2026-07-12 |
 | ESC-010 | ローカル開発ツール | fastlane 2.237.0をHomebrewで導入 | macOS | 有効・必要 | 低 | TestFlightローカルビルド運用終了時に削除可否を判断 | 2026-07-13 |
+| ESC-011 | ローカルDB検証・外部棚卸し | Supabase CLI導入、使い捨てlocal stack、Hosted read-only inventory | macOS / Docker / Supabase | 一時的 | 中 | 保持資源の停止状態と削除要否を再確認 | 2026-08-07 |
 
 ## 8. 個別変更記録
 
@@ -95,7 +96,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **実施日時**：2026-07-12（この Codex セッション内）
 - **実施者**：ユーザー承認のもと Codex が Vercel 管理画面で実施
 - **実施状況**：実施済み
-- **現在の状態**：ステージング API へログイン不要で到達可能な状態として確認された。再有効化は未確認。
+- **現在の状態**：2026-08-07にステージング API へログイン不要で到達可能な状態を再確認した。再有効化は未実施。
 - **ステータス**：有効・要見直し
 - **変更内容**：Deployment Protection の Require Log In を無効化した。
 - **実施理由**：TestFlight と iOS Simulator からステージング API を検証するため。
@@ -110,7 +111,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **確認方法**：Vercel Dashboard で Require Log In の状態を確認し、未認証リクエストの応答を確認する。
 - **解除・削除・復旧手順**：Vercel Dashboard の Deployment Protection で Require Log In を有効化する。変更後、TestFlight の到達要件を再確認する。
 - **次回確認日**：2026-07-19 または TestFlight 検証完了直後
-- **最終確認日**：2026-07-12
+- **最終確認日**：2026-08-07
 - **対応結果・補足**：緊急性の高い未解消リスク。公開を継続する理由と期限を人間が判断すること。
 
 ## ESC-002：Vercel ステージング API の公開デプロイ
@@ -120,7 +121,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **実施日時**：2026-07-12（この Codex セッション内、ユーザーが完了を報告）
 - **実施者**：ユーザー
 - **実施状況**：実施済み
-- **現在の状態**：ステージング API はデプロイ済みとして、TestFlight・Simulator の検証に利用された。現在のデプロイ先・環境変数の状態は要確認。
+- **現在の状態**：VercelのProduction deploymentは`main`の確認済みcommitからReadyで稼働している。固定の無効tokenを用いたread-only routing probeと、直後の両Supabase Auth logの差分から、現在のAPI接続先が`otokagami-staging`であることをalias単位で確認した。Sensitive指定の`SUPABASE_URL`はVercel仕様上再表示できないため、値自体は取得・記録していない。
 - **ステータス**：有効・要見直し
 - **変更内容**：Vercel CLI を用いてステージング名の API プロジェクトへ公開デプロイした。
 - **実施理由**：TestFlight から公開 HTTPS API を利用するため。
@@ -135,7 +136,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **確認方法**：Vercel Dashboard で対象プロジェクト、Production/Preview の紐付け、デプロイ履歴、環境変数名、Protection を確認する。
 - **解除・削除・復旧手順**：本台帳では実施しない。Vercel Dashboard で対象デプロイまたはプロジェクトの運用方針を確認し、必要な承認後にロールバック・保護再設定を行う。
 - **次回確認日**：次回 TestFlight 更新前
-- **最終確認日**：2026-07-12
+- **最終確認日**：2026-08-07
 - **対応結果・補足**：CLI の初回実行はアップロード件数上限により失敗し、ユーザーが別手順でデプロイ完了を報告した。失敗した初回操作は公開変更として数えない。
 
 ## ESC-003：Vercel CLI のプロジェクト連携とローカル環境ファイル
@@ -145,7 +146,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **実施日時**：2026-07-12（この Codex セッション内）
 - **実施者**：ユーザー
 - **実施状況**：実施済み
-- **現在の状態**：ルートに `.vercel` と `.env.local` が作成されたこと、`.gitignore` に `.vercel` と `.env*` が追加されていることを確認した。ローカルのログイン有効期限は要確認。
+- **現在の状態**：ルートと`apps/api`に`.vercel`と`.env.local`が残り、`.gitignore`で追跡対象外である。2026-08-07の確認ではVercel CLIの既存ログイン資格情報は見つからず、管理画面のログイン状態とは分離されていた。値は読み出していない。
 - **ステータス**：有効・要見直し
 - **変更内容**：Vercel CLI が `otokagami-api-staging` へリンクし、development 環境変数をローカル `.env.local` へ取得した。
 - **実施理由**：ステージング API のデプロイ・検証を行うため。
@@ -160,7 +161,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **確認方法**：`.gitignore`、`git status --ignored`、Vercel CLI のリンク先、ローカルファイルの権限を確認する。
 - **解除・削除・復旧手順**：必要な承認後にローカル `.vercel` と `.env.local` を削除し、Vercel CLI からログアウトする。削除前に必要な設定を Vercel 側に残していることを確認する。
 - **次回確認日**：ステージング作業完了時
-- **最終確認日**：2026-07-12
+- **最終確認日**：2026-08-07
 - **対応結果・補足**：秘密値は本台帳に含めない。
 
 ## ESC-004：EAS staging チャネルと TestFlight ステージング配布
@@ -170,11 +171,11 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **実施日時**：不明（このセッション内で staging への EAS Update 公開と TestFlight 検証を確認）
 - **実施者**：ユーザーおよび Codex
 - **実施状況**：実施済み
-- **現在の状態**：`apps/mobile/eas.json` に `staging` チャネルとApp Store ConnectアプリIDがあり、0.1.1 (8) を2026-07-13にApp Store Connectへ提出済み。Appleの処理完了とTestFlightテスターへの表示は要確認。
+- **現在の状態**：Expo DashboardではEAS cloud build 0.1.0 (1) が完了済みで、`staging` profile、`preview` environment、`staging` channel、runtime 0.1.0、source commit `afe4717`として確認できる。App Store Connectでは内部テストグループ`Team (Expo)`に0.1.0 (1)、0.1.1 (8)、0.1.1 (9)があり、いずれも`Ready to Submit`かつ期限内だった。0.1.1の外部テストグループは確認されなかった。
 - **ステータス**：有効・必要
 - **変更内容**：EAS Update プロジェクトを接続し、`staging` チャネルを TestFlight 用ビルドに設定した。0.1.1 (8) の署名済みIPAを提出し、再提出用のApp Store ConnectアプリIDを設定した。
 - **実施理由**：非ネイティブ変更を TestFlight 検証端末へ配信するため。
-- **確認できた根拠**：`apps/mobile/app.json`、`apps/mobile/eas.json`、`docs/phases/PHASE_14_REMOTE_IOS_STAGING.md`、このセッションの公開・実機検証報告。
+- **確認できた根拠**：`apps/mobile/app.json`、`apps/mobile/eas.json`、`docs/phases/PHASE_14_REMOTE_IOS_STAGING.md`、Expo Dashboard、App Store Connect。ユーザー所有の0.1.0 (1)配布物を新しい一時ディレクトリへ保存し、署名変更・実行・再配布をせずに埋め込み設定を確認した結果、Bundle IDは既存の`com.yutahemmi.otokagami`、公開Supabase接続先は`otokagami-staging`、サーバー専用変数名とservice-role token literalの検出は0件だった。0.1.1 (8)/(9)は管理画面から配布物を取得できず、ローカルにも保全済み配布物が見つからないため、ビルド時の公開Supabase接続先は未確認。
 - **関連ファイル・設定場所**：`apps/mobile/app.json`、`apps/mobile/eas.json`、Expo Dashboard、App Store Connect。
 - **付与した権限・公開範囲**：Expo アカウントの当該プロジェクト操作権限、TestFlight テスターへのステージングアプリ配布。
 - **使用している認証情報の名称**：Expo/EAS ログイン、Apple Developer/App Store Connect 認証。
@@ -182,11 +183,11 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **想定されるリスク**：意図しない更新チャネルへの配信、テスト配布範囲の過大化、公開変数設定の誤り。
 - **リスクレベル**：中
 - **不要になったと判断する条件**：TestFlight 検証と EAS Update の運用を終了したとき。
-- **確認方法**：Expo Dashboard で channel/runtimeVersion/update 履歴を確認し、App Store Connect で TestFlight のテスターとビルド状態を確認する。
+- **確認方法**：Expo Dashboardでprofile、environment、channel、runtimeVersion、source commitを確認し、App Store Connectで内部・外部テスター、build状態、有効期限を確認する。接続先は履歴文書から推測せず、保全済み配布物内の公開URLをaliasへ照合するか、対象buildの実行時通信を両Supabase projectのread-only logで相関確認する。
 - **解除・削除・復旧手順**：本台帳では実施しない。承認後に配布対象・チャネル運用を変更し、必要なら新ビルドで設定を置換する。
 - **次回確認日**：次回 staging 更新前
-- **最終確認日**：2026-07-12
-- **対応結果・補足**：`EXPO_PUBLIC_*` は公開バンドルに入る前提の値のみを使用し、サーバー専用キーは登録しない。
+- **最終確認日**：2026-08-07
+- **対応結果・補足**：解析用配布物は`/private/tmp/otokagami-s601-mobile-jNYFIr`に保持し、IPAは16,322,571 bytes、一時ディレクトリ全体は約75MB。自動削除していない。`EXPO_PUBLIC_*`は公開バンドルに入る前提の値だけを使用し、サーバー専用キーは登録しない。0.1.1 (8)/(9)の接続先確認が残る。
 
 ## ESC-005：BlackHole 仮想オーディオドライバの導入
 
@@ -288,13 +289,42 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **最終確認日**：2026-07-12
 - **対応結果・補足**：実施済みの変更として扱わない。
 
+## ESC-011：S6-01 Supabase local検証とHosted read-only inventory
+
+- **分類**：ローカルDB検証・外部棚卸し
+- **対象端末・サービス**：macOS、Homebrew、Colima/Docker、使い捨てlocal Supabase、Supabase Dashboardの`Otokagami`と`otokagami-staging`
+- **実施日時・最終確認日**：2026-08-07
+- **実施者**：ユーザー承認のもとCodex
+- **実施状況**：実施済み。削除は未実施。
+- **ステータス**：一時的
+- **変更内容**：Homebrewの`supabase/tap`からSupabase CLI 2.112.0を導入した。導入時にHomebrew tapの自動更新が実行された。使い捨てlocal stack用のDocker imageを取得し、専用port `56320`〜`56329`と一時ディレクトリ`/private/tmp/otokagami-s601-8nhKel`を使ってmigration、Seed、RLSを検証した。
+- **目的**：Hosted DBへ書き込まず、リポジトリのmigration、Seed、RLSを再現可能なlocal環境で確認したうえで、両Hosted projectのschemaと集計状態をread-onlyで棚卸しするため。
+- **接続境界**：local検証ではremote linkを作成せず、Hosted credentialを使用しなかった。Hosted側はSQL Editorで`BEGIN READ ONLY`、5秒のstatement timeout、read-only guard、`ROLLBACK`を含む固定queryだけを実行した。
+- **local検証結果**：3本のrepository migrationとSeedの適用、content Seedテスト、RLSテストが成功した。localではpublic table 21、RLS policy 50、function 2、trigger 8、index 45を確認した。Seedはphoneme 41、cluster 20、practice item 428、target 428、active practice item 6、advice 18（active 0）で、最新migrationにより`ja_difficulty`が削除された状態を確認した。
+- **初回stackの処置**：必要な設定ファイルだけを複製した最初のstackはEdge runtime起動に失敗し、Supabase CLIがその試行で作成したcontainerとvolumeを自動cleanupした。次の試行では使い捨て設定でEdge runtimeを無効化し、DB検証を完走した。
+- **cleanup識別子**：`otokagami-s601-8nhkel`
+- **現在のローカル状態**：ColimaはmacOS Virtualization.framework上のDocker runtimeとして稼働中。S6-01用container 11個はすべて停止済みで、専用volume 2個は保持している。関連containerの論理使用量は約27.54MB、volumeは約82.66MB、関連image 11個の非重複を考慮しない論理合計は約1.72GB。imageは他のlocal stackと共有される可能性がある。
+- **一時CLI cache**：EASとVercelのread-only接続確認で`npx`を使用し、`eas-cli`と`vercel`が既存のnpm一時cache配下へ追加された。グローバル導入や外部設定変更は行っていない。npm `_npx`全体は約379MBだが、既存cacheを含むため今回分だけの容量は未確定。
+- **Hosted棚卸しの保存状態**：両projectのSQL Editorに、秘密・個人情報・音声・個別識別子・個別データを返さないprivateのread-only inventory queryがautosaveされている。queryは削除していない。Dashboard閲覧とquery実行以外に、Hosted設定、DB、backup、PITR、planを変更していない。
+- **asset参照検証**：repository Seedのadvice asset参照18件（重複除外15件）はmanifestの15件と全て対応し、manifest記載の15ファイルは全て存在した。15件はいずれも`static_placeholder`かつreview必須であり、公開用の正式図解としては扱わない。
+- **Backup状態**：両projectはFree Planでscheduled backupを利用できず、PITRは未契約。restore-to-new-projectはPro Planとphysical backupが必要なため、今回の復元経路としては未検証・利用不可。
+- **想定されるリスク**：CLIとDocker imageによるディスク消費、Colima常駐中のCPU・メモリ消費、停止containerとvolumeの放置、別projectで同じportや識別子を使うことによる誤接続、SQL Editorにautosaveされたqueryの長期残存。
+- **リスクレベル**：中
+- **状態確認方法**：`supabase --version`、`brew info supabase`、`colima status`、cleanup識別子で絞った`docker ps -a`と`docker volume ls`、および`docker system df`を使用する。local検証時はremote linkがないこと、専用portであること、Hosted credentialが未設定であることを再確認する。
+- **停止手順**：検証を再開した場合は、対象project IDとcontainer一覧を確認してからlocal stackだけを停止し、11個すべてが`Exited`であることを確認する。Colima自体の停止は他projectの利用有無を確認してから別途判断する。
+- **削除手順**：別承認後にcleanup識別子で対象を再列挙し、S6-01専用container 11個とvolume 2個を明示的に削除する。imageは共有参照を確認し、S6-01専用と証明できるものだけを個別承認後に削除する。一時ディレクトリとSQL Editor queryの削除も別承認とする。
+- **解除・復旧手順**：削除前にlocal検証証拠が台帳へ記録済みであることを確認する。volume削除後の復元は前提にせず、必要な場合はrepository migrationとSeedから新しい使い捨てlocal DBを再作成する。Hosted DBのrestoreとは別操作として扱う。
+- **次回確認日**：要確認
+- **対応結果・補足**：Hosted DB write、migration、Seed、RLS変更、backup作成、restore、Production操作は行っていない。SQL Editorのquery autosaveは事前承認済みの外部メタデータ保存として本項へ記録した。
+
 ## 9. 要確認事項
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
 2. **ESC-002 / ESC-003**：Vercel プロジェクトの公開範囲、環境変数名、ローカル CLI ログインと `.env.local` の保管要否を確認する。
-3. **ESC-004**：Expo の staging 更新履歴、TestFlight テスター、ビルド有効期限、公開変数が許容範囲であることを管理画面で確認する。
+3. **ESC-004**：0.1.1 (8)/(9)を個別に実機起動して両Supabase projectのread-only logと相関させるか、ユーザー保有の配布物を提示して、ビルド時の公開Supabase接続先を確定する。
 4. **ESC-006**：macOS の既定入力が BlackHole 16ch、Simulator 入力が BlackHole 2ch である不整合を確認し、テスト完了後に内蔵デバイスへ戻す。
 5. **ESC-007**：本日の開発終了時に Metro の LAN 待受を停止するか確認する。
+6. **ESC-011**：S6-01用の停止container 11個、保持volume 2個、関連image、一時ディレクトリ、SQL Editor autosave queryをいつ削除するか判断する。削除はすべて別承認とする。
 
 ### 調査範囲と制限
 
@@ -307,3 +337,5 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 点検日 | 対象 ID | 実施者 | 結果 |
 | --- | --- | --- | --- |
 | 2026-07-12 | ESC-001〜ESC-008 | Codex | 初回台帳作成。リポジトリ、現在のセッション、設定ファイルを調査。外部管理画面の現況確認が必要な項目を要確認として登録。 |
+| 2026-08-07 | ESC-011 | Codex | Supabase CLI 2.112.0、local migration/Seed/RLS、停止container 11個、保持volume 2個、Colima稼働、両Hosted projectのread-only inventoryとbackup/PITR未契約を確認。削除・Hosted変更は未実施。 |
+| 2026-08-07 | ESC-001〜ESC-003 | Codex | Vercel APIの公開到達、ReadyなProduction deployment、`otokagami-staging`へのrouting、ローカルVercel CLIが未ログインであることを確認。Sensitive値と秘密は取得・記録していない。 |
