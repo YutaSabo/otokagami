@@ -1,23 +1,41 @@
-# Pronunciation Mirror
+# Otokagami
 
-Pronunciation Mirror MVP is organized as a monorepo for an iPhone-only Expo app, a Next.js API, a Python inference service, and local Supabase assets.
+Otokagamiは、毎日1つの焦点音を管理課題で発見し、短いコツと再録音でその場の変化を示し、別の単語・文と後日の無補助判定で定着まで確認するiPhone向け発音改善アプリです。
 
-## Package Management
+製品仕様の正本は[マスター設計書](マスター設計書.md)と[仕様書体系](docs/specs/00_README.md)です。
 
-This repository uses npm workspaces.
+## 現在実装と目標構成
 
-Reason: npm ships with Node.js, works without an extra package-manager bootstrap step, and keeps Expo/React Native dependency resolution close to the default tooling path.
+### 現在実装
 
-## Workspace Layout
+このリポジトリは、方向転換前のMVPを実装済みのmonorepoです。
 
 ```text
 apps/mobile          Expo React Native iPhone app
 apps/api             Next.js API
 services/inference   Python inference service
-supabase             Supabase local config, migrations, seed
+supabase             local config, migrations, seed, RLS tests
 ```
 
-## First-Time Setup
+現在のworkspace、パッケージ、iOS識別子、コードには旧称`Pronunciation Mirror`が残っています。自由入力、詳細なスコア・進捗、実行時OpenAI助言、Python/Piper TTS等も残っているため、既存環境を起動・検証するには以下のセットアップと環境変数が引き続き必要です。
+
+### 新MVPの目標
+
+- Azure `en-US`だけを発音判定に使う。
+- 自由入力を提供せず、レビュー済み管理課題だけを判定する。
+- 1日1焦点音、通常5課題、良好日は3課題程度、任意追加2課題。
+- 対象1音の主要結果をDB保存・長期集計より先に表示する。
+- 問題文、IPA、標準/スロー音声、助言、図解を事前生成・レビューする。
+- 実行時OpenAI/Piper/Pythonを中心経路から外す。
+- 7暦日ではなく7 active learning daysを提供する。
+
+第3段階では文書だけを更新しており、コード、DB、パッケージ名、Bundle ID、API名、外部環境はまだ移行していません。
+
+## Package management
+
+このリポジトリはnpm workspacesを使います。Node.jsに同梱され、Expo/React Nativeの標準的な依存解決に近い構成を維持するためです。
+
+## 初回セットアップ（現在実装）
 
 ```bash
 npm install
@@ -29,11 +47,11 @@ python -m pip install -r requirements.txt
 cd ../..
 ```
 
-Fill `.env` locally. Do not paste secret values into chat, logs, or committed files.
+`.env`はローカルで設定してください。秘密値をチャット、ログ、文書、コミットへ貼り付けないでください。
 
-## Local Development
+## ローカル起動（現在実装）
 
-Expected startup order after environment values are set:
+環境値を設定後、次の順で起動します。
 
 ```bash
 supabase start
@@ -43,9 +61,9 @@ npm run dev:api
 npm run dev:mobile
 ```
 
-The mobile app is configured for Expo dev client/prebuild and iOS only.
+現在のmobileはExpo dev client/prebuildを前提とし、iOS向けです。新MVP移行後にPythonサービスが不要になるまで、現在実装の起動手順から削除しません。
 
-## Root Checks
+## Checks
 
 ```bash
 npm run lint
@@ -54,9 +72,9 @@ npm run build
 npm run check
 ```
 
-`check` runs lint, tests, and build/config checks across the workspaces.
+`check`はworkspacesのlint、test、build/config checksを実行します。
 
-## Workspace Commands
+## Workspace commands
 
 ```bash
 npm run dev:mobile      # Expo dev client Metro server
@@ -64,16 +82,16 @@ npm run dev:api         # Next.js API on port 3000
 npm run dev:inference   # Python service on port 8000
 ```
 
-Health checks:
+現在実装のhealth checks:
 
 ```bash
 curl http://localhost:3000/api/health
 curl http://localhost:8000/internal/health
 ```
 
-## Supabase Local
+## Supabase local
 
-This project uses non-default local Supabase ports so it can run beside another local Supabase project:
+他のlocal Supabase projectと併用できるよう、非標準portを使います。
 
 ```text
 API:    http://127.0.0.1:55321
@@ -82,25 +100,38 @@ Studio: http://127.0.0.1:55323
 Mail:   http://127.0.0.1:55324
 ```
 
-Rebuild the local database from migrations and seed:
+local DBをmigrationとseedから再構築:
 
 ```bash
 supabase db reset
 ```
 
-Run the Phase 2 RLS test SQL through the local Postgres container:
+現在のRLS SQL test:
 
 ```bash
 docker exec -i supabase_db_pronunciation-mirror psql -U postgres -d postgres < supabase/tests/rls.sql
 ```
 
-## Environment Rules
+container名にも旧実装名が残ります。第3段階では変更しません。
 
-Only `EXPO_PUBLIC_*` values are available to the mobile bundle. Server-only keys such as `AZURE_SPEECH_KEY`, `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH_TOKEN`, and `PYTHON_SERVICE_API_KEY` must remain outside Expo public variables.
+## Environment rules
+
+`EXPO_PUBLIC_*`はmobile bundleへ含まれ得る公開前提値だけに使います。
+
+現在実装でサーバーだけに置くもの:
+
+- `AZURE_SPEECH_KEY`
+- `OPENAI_API_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `REVENUECAT_SECRET_KEY`
+- `REVENUECAT_WEBHOOK_AUTH_TOKEN`
+- `PYTHON_SERVICE_API_KEY`
+
+OpenAI/Python/Piper関連値は新MVPの目標中心経路では不要になる予定ですが、コード移行完了までは`.env.example`から削除しません。実値を`EXPO_PUBLIC_*`へ置かないでください。
 
 ## iOS Azure Speech streaming setup
 
-発音判定は Expo Go では動作せず、Development Build が必要です。
+発音判定はExpo Goでは動作せず、Development Buildが必要です。
 
 1. `.env.example`を基にサーバー環境へ`AZURE_SPEECH_KEY`、`AZURE_SPEECH_REGION`、`AZURE_SPEECH_LOCALE=en-US`を設定する。秘密値を`EXPO_PUBLIC_*`へ入れない。
 2. `npm install`を実行する。
@@ -108,22 +139,35 @@ Only `EXPO_PUBLIC_*` values are available to the mobile bundle. Server-only keys
 4. `apps/mobile/ios`で`pod install`を実行し、Azure Speech iOS SDKを取得する。
 5. 実機またはSimulator向けDevelopment Buildを作り、マイク権限を許可する。
 
-実機確認では、問題表示時に判定準備が完了すること、録音停止後の初期結果が通常0.6〜1.3秒を目標に表示されること、機内モード・期限切れトークン・短すぎる音声・無音・30秒超過で再試行できることを確認します。端末ログには`token_fetch_ms`、`recognizer_preparation_ms`、`button_to_azure_result_ms`、`normalization_ms`、`button_to_ui_ms`、API保存時間だけを記録し、トークン、音声、認識本文は記録しません。
+workspace名は現在実装の識別子であり、正式製品名ではありません。
+
+実機では、問題表示中の準備、録音開始、PCM直接stream、録音停止、Azure final result、主要結果表示、保存確定を別々に計測します。P95 3秒等は[テスト計画](docs/specs/10_TEST_PLAN.md)の`実機検証目標`であり、達成済みの性能ではありません。token、音声、認識本文を端末ログへ残さないでください。
+
+## 仕様とPhase
+
+- [マスター設計書](マスター設計書.md): 最上位製品方針
+- [仕様書体系](docs/specs/00_README.md): 読む順番、用語、固定値
+- [Phase 13](docs/phases/PHASE_13_INTEGRATION_STAGING_READINESS.md): 新MVPの統合・ステージング受け入れ
+- [Phase 13準備状況](docs/phases/PHASE_13_TESTFLIGHT_READINESS_CHECKLIST.md): 旧基盤と新MVP未実装を分離
+- [Phase 14](docs/phases/PHASE_14_REMOTE_IOS_STAGING.md): 許可済み環境でのリモート実機確認
+
+Phase 01〜12は方向転換前の完了済み履歴であり、現在の製品仕様ではありません。
 
 ## 環境・権限・セキュリティ変更の記録
 
-PC、OS、開発環境、外部サービスなどに対して、次の変更を行った場合は、作業完了前に [docs/environment-and-security-change-log.md](docs/environment-and-security-change-log.md) へ記録すること。
+PC、OS、開発環境、外部サービスへ次の変更を行った場合は、同じ作業内で[環境・セキュリティ変更台帳](docs/environment-and-security-change-log.md)へ記録します。
 
 - OSやアプリの権限変更
 - アプリ、CLI、パッケージ、常駐ツールのインストール
 - 管理者権限を利用した設定変更
 - OAuth、API、外部サービスへのアクセス承認
-- ポート開放、公開URL、トンネル、リモートアクセスの有効化
+- ポート開放、公開URL、トンネル、リモートアクセス
 - セキュリティ機能の無効化や例外追加
-- 自動起動、定期実行、バックグラウンド処理の追加
-- 一時的な設定で、放置するとリスクや費用が発生する可能性があるもの
-- 元に戻す作業や定期的な必要性確認が必要な変更
+- 自動起動、定期実行、background処理
+- 放置するとリスクや費用が発生する一時設定
 
-記録には、変更内容、目的、対象、現在の状態、リスク、確認方法、解除・復旧手順、次回確認日を含める。秘密情報の値は記録せず、環境変数名や保管場所だけを記載する。変更を実施していない提案段階の内容は実施済みとして記録せず、実施状況を確認できない場合は `要確認` と記載する。
+変更内容、目的、対象、状態、リスク、確認方法、解除・復旧手順、次回確認日を記録します。秘密値は記録せず、実施状況を確認できない場合は`要確認`とします。提案だけの内容を実施済みとして記録しません。
 
-Codexを含む作業者は、記録対象の変更を実施した同じタスク内で台帳を更新し、記録を後回しにしない。実行前に解除または復旧方法を確認し、実行後は実際の状態を確認して記録する。一時変更には可能な限り解除条件または次回確認日を設定する。台帳自体の追加と通常のソースコード変更は原則として記録対象外だが、判断に迷う変更は記録する側に倒す。
+## 完成範囲
+
+今回想定する「アプリ完成」に、App Store申請、一般公開、Productionデプロイは含みません。それぞれ別の承認と検証が必要です。

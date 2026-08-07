@@ -1,271 +1,211 @@
-# Architecture
+# Otokagami アーキテクチャ
 
-## 対象アーキテクチャ
+> 文書状態: 現役
+> 目的: 現在実装と新MVP目標構成を混同しない
 
-MVPは iPhone 向けの Expo React Native アプリ、iOSネイティブ発音判定モジュール、Next.js API、Python推論サービス、Supabase、外部APIで構成する。発音判定の音声経路だけは、遅延と秘密情報保護を両立するため、バックエンド発行の短期トークンを使って端末からAzure Speechへ直接ストリーミングする。
+## 1. 現在実装
 
-開発環境では Supabase を Docker 経由でローカル実装する。
-
-## 全体構成
+リポジトリには次が実装済みである。
 
 ```text
-apps/mobile
-  Expo React Native iPhone app
-
-apps/api
-  Next.js API
-
-services/inference
-  Python service
-  eSpeak NG / phonemizer / CMU dictionary
-  Piper TTS
-
-supabase
-  Local Supabase via Docker
-  migrations
-  seed
+Expo React Native iPhone app
+  ├─ Supabase anonymous auth
+  ├─ RevenueCat SDK
+  ├─ Azure Speech iOS native module
+  └─ Next.js API
+      ├─ Supabase/Postgres
+      ├─ Azure短期トークン
+      ├─ 判定結果保存・旧集計
+      ├─ RevenueCat webhook
+      ├─ OpenAI助言
+      └─ Python inference service
+          ├─ phonemizer / eSpeak / CMUdict
+          └─ Piper TTS
 ```
 
-実際のディレクトリ構成は実装フェーズで作成する。上記は責務境界であり、既存リポジトリにまだコードはない。
+旧称`Pronunciation Mirror`がworkspace、パッケージ、Bundle ID、表示名、API識別子等に残る。自由入力、詳細スコア、ゲーミフィケーション、実行時OpenAI/Piper/Pythonも残る。これらは現在実装の事実であり、新MVPの採用仕様ではない。
 
-## レイヤー責務
+第3段階では名称、コード、DB、環境、外部サービスを変更しない。
 
-| レイヤー | 責務 |
+## 2. 新MVP目標構成
+
+```text
+iPhone Otokagami app
+  ├─ static reviewed content / audio / advice / diagrams
+  ├─ local representative before/after (max 30 calendar days)
+  ├─ Supabase anonymous auth
+  ├─ RevenueCat public SDK
+  ├─ Next.js trusted API
+  │   ├─ auth / access / 7 active learning days
+  │   ├─ daily plan / content entitlement
+  │   ├─ Azure short-lived token issuance
+  │   ├─ assessment validation / normalization
+  │   ├─ idempotent persistence / durable evidence
+  │   ├─ reports / export / deletion
+  │   └─ RevenueCat webhook
+  ├─ Azure Speech
+  │   └─ direct PCM streaming from iPhone
+  └─ Supabase/Postgres
+      └─ protected progress, content metadata, billing state
+```
+
+毎日の中心経路に、実行時OpenAI、Piper、Python推論を含めない。問題文、IPA、標準/スロー音声、助言、図解は事前生成・レビューする。
+
+## 3. 音声経路
+
+1. 問題表示時にアプリがAPIからAzure短期トークンを取得する。
+2. iOSネイティブモジュールがRecognizerを準備する。
+3. 録音中に16kHz/16bit/mono PCMを端末からAzureへ直接送る。
+4. 録音停止時にstreamを閉じ、Azure最終結果を受け取る。
+5. 音声本体ではなく結果JSONだけを自社APIへ送る。
+6. アプリは代表before/afterだけをローカルWAV等で保持する。
+
+禁止:
+
+- 自社APIへの音声アップロード
+- DBまたはSupabase Storageへのユーザー音声保存
+- Azure Subscription Keyのクライアント配置
+- M4A変換やサーバー音声変換を中心待ち時間へ追加
+
+## 4. 主要結果の高速経路
+
+```text
+Azure final result
+  → local/server pure normalization
+  → target-one-sound primary result
+  → UI display
+
+                         ↘ idempotent persistence
+                           → durable evidence
+                           → review/report aggregation
+```
+
+主要結果は、長期集計、週次レポート、通知更新、複数テーブル更新の完了を待たない。
+
+保存方式はTBDだが、次を満たす。
+
+- client attempt IDで重複排除。
+- 保存失敗時にAzure結果を端末で保持して再送。
+- 録音のやり直し不要。
+- durable進捗は信頼境界で検証後に確定。
+- UIは保存保留を非妨害的に示す。
+
+## 5. レイヤー責務
+
+| レイヤー | 目標責務 |
 | --- | --- |
-| Expoアプリ | UI、録音、再生、端末ローカル録音保存、RevenueCat SDK、Supabase anonymous auth。 |
-| iOSネイティブ発音判定モジュール | Azure Speech SDKのRecognizer事前生成、16kHz/16bit/mono PCMのリアルタイム送信、明示的なストリーム終了、Azure JSON取得、ローカルWAV生成。 |
-| Next.js API | 認証検証、アクセス制御、Azure短期トークン発行、正規化済み判定結果の検証・保存、OpenAI助言、RevenueCat webhook、集計更新、Supabase service role処理。 |
-| Python推論サービス | IPA変換、テキスト正規化、OOV検出、Piper TTS生成。 |
-| Supabase | Auth、Postgres、RLS、Storage、ローカルDocker開発。 |
-| Azure | 発音評価。 |
-| OpenAI | 未知ケースの短文助言整形。 |
-| RevenueCat | IAP購読状態管理、購入復元、webhook。 |
+| Mobile UI | 日次UX、録音状態、主要結果、ローカル音声、再送待ち、RevenueCat購入 |
+| iOS native | PCM capture、Azure stream、取消・NoMatch・音声品質メタデータ |
+| Static content | 課題、IPA、標準/スロー音声、助言、図解、version |
+| Trusted API | 認証、trial/購読、session、token、正規化検証、idempotency、durable進捗 |
+| Supabase | Auth、Postgres、RLS/data policy、protected state |
+| Azure | `en-US`のscripted pronunciation assessment |
+| RevenueCat | iOS IAP、entitlement、購入復元、webhook |
 
-## Expoアプリ
+## 6. 認証・認可
 
-### 前提
+- Supabase anonymous authで開始する。
+- APIはJWTを検証しuser IDを確定する。
+- trial、subscription、durable evidence、active contentの更新をクライアントだけに許可しない。
+- ユーザー所有データはRLSとサーバー検証で分離する。
+- RLSの存在だけでなく、他ユーザー拒否・protected write拒否をテストする。
 
-- Expo + dev client/prebuild 前提。
-- Managed Workflow厳守にはしない。
-- iPhoneのみ。
-- Android、iPad専用UI、Webは対象外。
+## 7. コンテンツ配信
 
-### 主な責務
+管理課題だけに限定することで、実行時の文正規化、IPA変換、TTS生成、助言生成を削減できる。
 
-- Supabase anonymous authでログイン。
-- `EXPO_PUBLIC_SUPABASE_URL` と `EXPO_PUBLIC_SUPABASE_ANON_KEY` でSupabaseに接続。
-- RevenueCat public SDK keyで購読状態を取得。
-- 問題表示時に短期トークンを取得してRecognizerを準備する。
-- 録音開始からAzureへPCMを直接ストリーミングし、判定終了後に正規化済み結果だけをAPIへ送る。
-- お手本音声とユーザー録音を再生する。
-- 端末ローカルにユーザー録音を保存する。
-- iOSローカル通知をスケジュールする。
-- `.env` のサーバー専用キーを参照しない。
+選択肢:
 
-## Next.js API
+- 初回7日分をアプリへ同梱。
+- 静的ストレージ/CDNからversion付きで先読み。
+- 両者の組み合わせ。
 
-### 主な責務
+最終配置はTBD。いずれも、active content versionとaudio/advice/diagram versionの不一致を防ぐ。
 
-- Supabase JWTを検証する。
-- 7日無料期間とRevenueCat購読状態を判定する。
-- Subscription Keyを使ってAzure短期トークンを発行し、キー自体は返さない。
-- クライアントが送るAzure結果を共通形式へ正規化・検証する。
-- `attempts`、`attempt_phoneme_results`、`phoneme_state` などを更新する。
-- Python推論サービスを呼ぶ。
-- OpenAI APIを呼ぶ。
-- RevenueCat webhookを受ける。
-- Supabase service role keyを使う処理を閉じ込める。
+## 8. ローカル音声
 
-### 配置
+- 代表before/afterのみ。
+- 端末で最大30暦日。
+- 14日復習完了後に早期削除可。
+- 学習データ削除時に即時削除。
+- ファイル欠損を画面全体の失敗にしない。
+- バックアップや端末移行での扱いはTBD。長期録音ライブラリは作らない。
 
-MVPではVercel等のNext.js対応ホスティングを想定する。具体ホスティング先は実行指示書で確定する。
+## 9. 環境変数と秘密
 
-## Python推論サービス
+### クライアントへ置ける公開前提値
 
-### 主な責務
+- Supabase URL / anon key
+- API base URL
+- RevenueCat iOS public SDK key
 
-- eSpeak NG / phonemizer / CMU辞書によるIPA変換。
-- OOV検出。
-- 変換確信度の算出。
-- PiperによるTTS生成。
+### サーバー専用
 
-### 配置
+- Azure Speech key / region
+- Supabase service role
+- RevenueCat secret / webhook authorization
+- 現在実装が移行完了するまで必要なOpenAI/Python等の秘密
 
-Fly.io、Render等のコンテナ対応ホスティングを想定する。Next.js APIとは分離する。
+サーバー専用値を`EXPO_PUBLIC_`へ置かない。`.env`をGit管理しない。READMEの現在セットアップから旧サービス変数を事実に反して消さず、目標構成と分ける。
 
-### セキュリティ
+## 10. 多地域・多言語
 
-Python推論サービスは、Next.js APIからのみ呼ぶ。`PYTHON_SERVICE_API_KEY` でサーバー間認証を行う。
+- 初期UI/coaching: `ja-JP`
+- 初期assessment: `en-US`
+- coaching locale、target language、assessment locale、accent、market tagを分離する。
+- 別assessment localeはAzure capabilitiesとコンテンツを個別検証する。
+- 国籍・母語によるスコア補正はしない。
 
-## Supabase
+## 11. 性能
 
-### ローカル開発
+有利な既存要素:
 
-SupabaseはDocker経由でローカルに起動する。
+- 問題表示中のRecognizer準備
+- 短期トークン再利用
+- 録音中の直接ストリーミング
+- 短い管理課題
+- 静的音声・助言・図解の先読み
 
-実装フェーズで作成するもの:
+主要結果P95 3秒等は`実機検証目標`であり、達成済みではない。計測区間は問題表示、録音開始、Azure final、正規化、主要表示、保存確定を分ける。
 
-```text
-supabase/
-  config.toml
-  migrations/
-  seed.sql
-```
+## 12. 開発・デプロイ境界
 
-想定コマンド:
+現在のmonorepo、ローカルSupabase、Next.js、Expo dev client、Pythonサービスの起動手順は既存実装の保守に必要である。新目標から外れるサービスもコード移行完了までは削除しない。
 
-```bash
-supabase start
-supabase db reset
-supabase status
-```
+- ローカル変更・検証は各段階の承認範囲で行う。
+- Previewはプロジェクト規則の範囲でのみ利用する。
+- Production、Hosted DB変更、外部環境変更は個別承認が必要。
+- App Store申請・一般公開は今回のアプリ完成範囲外。
 
-上記コマンドを実行する前に、Supabase CLI と Docker が使える状態であることを確認する。
+## 13. 再利用候補
 
-### 本番
+- iOS Azure Speech SDKモジュールとPCM直接stream
+- 短期トークン、token cache
+- 音声品質検査、取消・古い応答の無視
+- Supabase anonymous auth
+- RevenueCat基盤
+- management content / active reviewの基礎
+- attempt、音素結果、書き出し・削除の基礎
+- RLS・秘密情報境界のテスト
 
-本番はSupabase hosted projectを想定する。ローカルと本番でURL/キーを分ける。
+再利用には新しいattempt役割、Program Day、保存分離、durable evidenceへの適合確認が必要である。
 
-### Storage
+## 14. 移行対象
 
-Supabase Storageは、お手本音声のTTSキャッシュに使う。ユーザー音声は保存しない。
-
-## 外部サービス
-
-| サービス | 用途 | キー配置 |
-| --- | --- | --- |
-| Azure Speech | 発音評価 | サーバー専用 `.env`。 |
-| OpenAI API | 未知ケース助言整形 | サーバー専用 `.env`。 |
-| RevenueCat public SDK key | Expoアプリの購読取得 | `EXPO_PUBLIC_` で可。 |
-| RevenueCat secret key | webhook/API検証 | サーバー専用 `.env`。 |
-| Supabase anon key | クライアント接続 | `EXPO_PUBLIC_` で可。 |
-| Supabase service role key | 管理操作 | サーバー専用 `.env`。 |
-
-## 環境変数
-
-環境変数の一覧はリポジトリ直下の `.env.example` に定義する。
-
-### 開発フロー
-
-初回に人間が `.env.example` をコピーして `.env` を作り、値を埋める。以降、Codexは `.env` が埋まっている前提で実装を進める。
-
-Codexは実際のキーの値を要求・出力・コミットしない。
-
-キーが必要な作業に着手する前に値が未設定であれば、Codexは「`.env` の `VARIABLE_NAME` をローカルで埋めてください」と依頼する。値そのものをチャットに書かせてはならない。
-
-`.env.example` に変数を追加した場合、Codexは新しく埋める項目名をユーザーへ知らせる。
-
-### Expo公開変数
-
-`EXPO_PUBLIC_` で始まる変数はアプリバンドルに含まれ得る。秘密情報を入れてはならない。
-
-許可するExpo公開変数:
-
-- `EXPO_PUBLIC_SUPABASE_URL`
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_API_BASE_URL`
-- `EXPO_PUBLIC_REVENUECAT_IOS_PUBLIC_SDK_KEY`
-
-### サーバー専用変数
-
-以下は絶対に `EXPO_PUBLIC_` にしてはならない。
-
-- `AZURE_SPEECH_KEY`
-- `AZURE_SPEECH_REGION`
-- `AZURE_SPEECH_LOCALE`（標準`en-US`）
-- `OPENAI_API_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `REVENUECAT_SECRET_KEY`
-- `REVENUECAT_WEBHOOK_AUTH_TOKEN`
-- `PYTHON_SERVICE_API_KEY`
-
-## .gitignore
-
-リポジトリ直下の `.gitignore` で `.env`、`.env.local`、`.env.*` を除外する。ただし `.env.example` はコミット対象にする。
-
-## パッケージバージョン
-
-設計書では具体バージョンを固定しない。実装開始時点の最新stableを確認し、実行指示書または初期セットアップPRで固定する。
-
-対象:
-
-- Expo。
-- React Native。
-- Supabase JS。
-- RevenueCat SDK。
-- Next.js。
-- Python。
-- eSpeak NG / phonemizer。
-- Piper。
-
-## 録音形式
-
-iOSネイティブモジュールはマイク入力を16kHz、16bit、monoのリトルエンディアンPCMへ変換し、ヘッダーなしPCMをAzure Speech SDKのpush streamへ録音中に書き込む。同じPCMから端末ローカル再生用WAVを生成する。M4A生成、録音完了待ち、WAVへの後変換、バックエンドへの音声アップロードは行わない。
-
-Android/Webではネイティブモジュールを読み込まず、対応外を明示する。iOS専用コードが他プラットフォームの型チェックを壊さない構成にする。
-
-## 発音判定のライフサイクル
-
-1. 問題表示時に `POST /api/speech-token` を呼び、期限、リージョン、ロケール、capabilitiesを取得する。
-2. iOSネイティブモジュールでSpeech RecognizerとPronunciation Assessment設定を準備する。
-3. 録音開始と同時にPCMをAzureへリアルタイム送信する。
-4. 「判定する」でpush streamを閉じ、Azure最終結果を待つ。
-5. アプリはAzure結果JSONだけを`POST /api/assess`へ送り、APIが共通形式への正規化と保存を行う。応答後に初期結果を描画し、正規化・保存時間は個別計測する。音声転送や音声変換はこの経路に含めない。
-6. トークンは発行から10分で失効するため、録音開始時点で残存時間が120秒未満なら更新する。
-
-## 音声保存
-
-ユーザー音声:
-
-- 端末ローカルに保存してよい。
-- サーバーに保存しない。
-- Supabase Storageに保存しない。
-
-お手本音声:
-
-- Piperで生成する。
-- Supabase Storage等にキャッシュしてよい。
-- ユーザー音声ではない。
-
-## デプロイ境界
-
-MVP実装時のデプロイ候補:
-
-| コンポーネント | 開発 | 本番候補 |
-| --- | --- | --- |
-| Expoアプリ | local dev client | EAS build / App Store |
-| Next.js API | local dev server | Vercel等 |
-| Python推論サービス | local Docker | Fly.io/Render等 |
-| Supabase | Docker local | Supabase hosted |
-
-Phase別の実行指示書では、まずローカル環境での完走を主対象にする。本番環境作成はユーザー承認後に行う。
-
-ただし TestFlight 配布にはステージングAPIが必要であるため、最終Phaseの完了条件には、ステージング環境での主要E2E動作確認を含める。ステージング候補は Vercel + Fly.io/Render + Supabase hosted とする。
-
-## ローカル起動の期待形
-
-実装完了後のローカル開発は、少なくとも次の順に起動できる状態を目指す。
-
-1. `.env.example` を `.env` にコピーし、人間が値を埋める。
-2. Dockerを起動する。
-3. Supabase localを起動する。
-4. DB migration/seedを適用する。
-5. Python推論サービスを起動する。
-6. Next.js APIを起動する。
-7. Expo dev clientでiPhoneアプリを起動する。
-
-## 禁止事項
-
-- サーバー専用キーをExpoアプリに渡さない。
-- `.env` をコミットしない。
-- 実際のキーをチャットに出さない。
-- ユーザー音声をサーバー保存しない。
-- 自由入力をデイリー集計に混ぜない。
-- Appleイントロオファーを設定しない。
-- StripeをiOS MVPに入れない。
-
-## フェーズ4セルフレビュー
-
-- マスター設計書・既作成ドキュメントとの矛盾: Expo dev client/prebuild、Next.js API、Python分離、Supabase Docker local、Piper、Azure/OpenAI/RevenueCat、音声非保存を反映済み。
-- Codexが実装に着手できる具体性: レイヤー責務、環境変数ルール、ローカル起動順、デプロイ境界を明記済み。
-- 用語・命名の一貫性: `EXPO_PUBLIC_`、`PYTHON_SERVICE_API_KEY`、`SUPABASE_SERVICE_ROLE_KEY` などを `.env.example` と一致させる前提で定義。
+- 旧称を含む表示・package/Bundle/workspace/API識別子
+- 従来の日次構成と3画面詳細フロー
+- 自由入力、音素選択、別建て苦手ドリル
+- 総合点中心表示、全音素詳細、ゲーミフィケーション
+- 実行時OpenAI/Piper/Python
+- 同日best attemptをdurable集計へ加算する旧ロジック
+
+具体的な移行順、削除、DB migrationは第4段階以降で決める。
+
+## 15. 未確認
+
+- Hosted Supabaseのスキーマ・Seed
+- 実機Azureレイテンシと焦点群別安定性
+- RevenueCat sandbox商品・復元・webhook
+- Vercel/Fly.io/Expo/App Store Connectの現在状態
+- static contentの最終配信方式
+- 保存方式と正式SLO

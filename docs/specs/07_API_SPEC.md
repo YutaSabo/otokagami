@@ -1,708 +1,202 @@
-# API Spec
+# Otokagami API責務仕様
 
-## 目的
+> 文書状態: 現役
+> 注意: 責務と契約条件を定義する。URL名称、DB方式、migrationは第4段階以降。
 
-この仕様は、Expoアプリ、Next.js API、Python推論サービス、Supabase、Azure、OpenAI、RevenueCat、Piper の責務境界を定義する。
+## 1. 原則
 
-## 基本方針
+- クライアントにサーバー専用秘密を置かない。
+- 音声本体を自社APIへ送らない。
+- Azure短期トークンで端末からAzureへ直接ストリーミングする。
+- 主要結果表示をDB保存・長期集計から分離する。
+- 再送可能な書き込みをidempotentにする。
+- durable進捗、trial、購読、active contentをクライアント申告だけで確定しない。
+- 実行時OpenAI、Piper、PythonをMVP中心経路から外す。
 
-- Expoアプリはサーバー専用キーを持たない。
-- Azure Subscription Key、OpenAI、Supabase service role、RevenueCat secret はNext.js APIまたはサーバー側処理のみで使う。
-- Azure発音判定の音声は、バックエンド発行の短期トークンを使い、iPhoneからAzureへ直接ストリーミングする。
-- Python推論サービスは IPA変換、phonemizer/eSpeak NG、Piper TTS を担当する。
-- Supabaseのユーザー所有データは `auth.uid()` とRLSを基本にする。
-- 集計更新のような不整合が困る処理はサーバーAPIで行う。
+## 2. 認証
 
-## サービス構成
+アプリはSupabase anonymous authのアクセストークンを使う。APIはトークンを検証し、ユーザー所有権をサーバー側で決定する。
 
-```text
-Expo iPhone App
-  -> Supabase Auth / RLS read
-  -> Next.js API
-      -> Azure token issuance endpoint
-      -> Supabase service role
-      -> OpenAI API
-      -> RevenueCat API/Webhook
-      -> Python Inference Service
-          -> eSpeak NG / phonemizer / CMU辞書
-          -> Piper TTS
-```
+公開前提のSupabase anon keyとRevenueCat public SDK key以外の秘密をアプリへ渡さない。Authorizationヘッダー、短期トークン、外部キーをログへ保存しない。
 
-## 認証
+## 3. API責務
 
-### アプリからNext.js API
+現行URLは移行まで残る可能性がある。ここでは目標責務を定義し、具体的な追加・統合・廃止URLはTBDとする。
 
-アプリはSupabase anonymous authのJWTを `Authorization: Bearer <access_token>` として送る。
-
-Next.js APIはSupabaseでJWTを検証し、`user_id = auth.uid()` として処理する。
-
-### サーバー間
-
-Next.js APIからPython推論サービスへの通信は、サーバー間APIキーで保護する。
-
-このキーは `PYTHON_SERVICE_API_KEY` とし、Expoアプリ側には置かない。
-
-## 共通レスポンス
-
-### 成功
-
-```json
-{
-  "ok": true,
-  "data": {}
-}
-```
-
-### 失敗
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "AZURE_ASSESSMENT_FAILED",
-    "message": "判定に失敗しました。",
-    "retryable": true
-  }
-}
-```
-
-エラー本文に秘密情報、APIキー、外部サービスの生トークンを含めない。
-
-## Next.js API
-
-### POST `/api/bootstrap`
-
-初回起動またはアプリ起動時に、プロフィールと無料期間状態を初期化/取得する。
-
-`device_install_id` はNext.js APIでハッシュ化し、`installations.device_install_id_hash` として保存する。生の `device_install_id` はDB、ログ、レスポンスに保存しない。同じ端末識別補助IDが再送された場合は既存 `installations` 行の `last_seen_at` を更新し、無料期間を再付与しない。
-
-Request:
-
-```json
-{
-  "timezone": "Asia/Tokyo",
-  "device_install_id": "keychain-generated-id",
-  "app_version": "1.0.0"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "profile": {
-      "user_id": "uuid",
-      "anon_public_id": "pm_...",
-      "native_language": "ja",
-      "target_accent": "US",
-      "free_trial_started_at": "2026-07-04T00:00:00Z",
-      "free_text_consent_version": null,
-      "free_text_consented_at": null
-    },
-    "access": {
-      "is_pro": false,
-      "is_trial_active": true,
-      "requires_paywall": false,
-      "trial_day": 1
-    }
-  }
-}
-```
-
-### POST `/api/practice-session`
-
-デイリー以外の練習セッションをサーバー側で生成する。苦手ドリルと音素表練習の出題ロジックはクライアントに分散させず、Next.js APIに集約する。
-
-Request:
-
-```json
-{
-  "mode": "weak_drill",
-  "phoneme_id": null,
-  "timezone": "Asia/Tokyo",
-  "session_date": "2026-07-04"
-}
-```
-
-`mode = phoneme_select` の場合は `phoneme_id` を必須とする。
-
-処理:
-
-1. JWTを検証する。
-2. アクセス権を確認する。
-3. `mode = weak_drill` の場合、`phoneme_state.mastery_ewma` が低い音素、`next_review_date <= 今日`、音素IDの順で出題する。国籍・母語による優先度は持たせない。
-4. `mode = phoneme_select` の場合、指定 `phoneme_id` をターゲットに持つ `practice_items` から出題する。
-5. 出題対象は `practice_items.is_active = true` のパック問題に限定する。
-6. 返却した問題は `/api/assess` の `practice_mode = weak_drill` または `phoneme_select` で判定する。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "mode": "weak_drill",
-    "items": [
-      {
-        "practice_item_id": "word_r_001",
-        "text": "right",
-        "expected_ipa": "/raɪt/",
-        "target_phoneme_ids": ["r"],
-        "tts": {
-          "normal_url": "https://...",
-          "slow_url": "https://..."
-        }
-      }
-    ]
-  }
-}
-```
-
-### GET `/api/access-status`
-
-無料期間とRevenueCat購読状態から、練習可否を返す。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "is_pro": false,
-    "is_trial_active": true,
-    "requires_paywall": false,
-    "free_trial_ends_at": "2026-07-11T00:00:00Z"
-  }
-}
-```
-
-### POST `/api/daily-session`
-
-指定ローカル日付のdaily sessionを取得または生成する。
-
-Request:
-
-```json
-{
-  "session_date": "2026-07-04",
-  "timezone": "Asia/Tokyo"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "daily_session_id": "uuid",
-    "session_date": "2026-07-04",
-    "status": "in_progress",
-    "completed_count": 0,
-    "items": [
-      {
-        "daily_session_item_id": "uuid",
-        "position": 1,
-        "slot_type": "weak",
-        "practice_item_id": "word_r_001",
-        "text": "right",
-        "expected_ipa": "/raɪt/",
-        "target_phoneme_ids": ["r"],
-        "tts": {
-          "normal_url": "https://...",
-          "slow_url": "https://..."
-        }
-      }
-    ]
-  }
-}
-```
-
-### POST `/api/speech-token`
-
-認証済みかつ練習権限のあるユーザーへAzure Speech短期トークンを返す。Subscription Keyはレスポンス、ログ、クライアントバンドルへ含めない。
-
-Request:
-
-```json
-{ "locale": "en-US" }
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "token": "short-lived-token",
-    "region": "japaneast",
-    "locale": "en-US",
-    "issued_at": "2026-07-12T00:00:00.000Z",
-    "expires_at": "2026-07-12T00:10:00.000Z",
-    "refresh_after": "2026-07-12T00:08:00.000Z",
-    "capabilities": {
-      "phonemeScores": true,
-      "ipaPhonemeNames": true,
-      "spokenPhonemeCandidates": true,
-      "syllables": true,
-      "prosody": true,
-      "miscue": true
-    }
-  }
-}
-```
-
-### POST `/api/assess`
-
-端末がAzureから受信した判定結果を検証・正規化し、attempt保存、best attempt更新、集計更新を行う。音声は受け取らない。Content-Typeは `application/json` とする。
-
-Fields:
-
-| フィールド | 内容 |
+| 責務 | 目標 |
 | --- | --- |
-| `azure_result` | Speech SDKの最終JSON。 |
-| `client_timing` | 音声内容を含まない性能計測値。 |
-| `practice_item_id` | 問題ID。 |
-| `practice_mode` | `daily`、`weak_drill`、`phoneme_select`。 |
-| `daily_session_id` | デイリー時のみ。 |
-| `daily_session_item_id` | デイリー時のみ。 |
-| `attempt_no` | 同一問題内連番。 |
-| `timezone` | IANA timezone。 |
-| `practiced_date` | 端末ローカル日付。 |
-| `app_version` | アプリバージョン。 |
-
-処理:
-
-1. JWTを検証する。
-2. アクセス権を確認する。
-3. Azure結果のサイズと型、問題IDから解決した参照テキスト、ロケールを検証する。
-4. Azureレスポンスをアプリ共通の `pronunciation_assessment` と互換用 `phoneme_results` に正規化する。
-5. `attempts` と `attempt_phoneme_results` を保存する。
-6. 同一問題内のbest attemptを再計算する。
-7. best attemptが変わった場合、`phoneme_state`、`phoneme_snapshots`、バッジを更新する。
-8. 必要な直し方ページ候補を返す。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "attempt_id": "uuid",
-    "is_best": true,
-    "overall_score": 82.4,
-    "target_score_avg": 78.0,
-    "is_correct": false,
-    "is_perfect": false,
-    "pronunciation_assessment": {
-      "provider": "azure",
-      "locale": "en-US",
-      "referenceText": "right",
-      "timing": {},
-      "capabilities": {},
-      "overall": {},
-      "issues": {},
-      "words": []
-    },
-    "phoneme_results": [
-      {
-        "index": 0,
-        "word_index": 0,
-        "expected_phoneme_id": "r",
-        "expected_ipa": "r",
-        "observed_phoneme_id": "l",
-        "observed_ipa": "l",
-        "score": 52,
-        "color": "red",
-        "is_target": true,
-        "confusion_pair_id": "r_to_l"
-      }
-    ],
-    "next": {
-      "recommended_advice_id": "r_to_l"
-    },
-    "earned_badges": []
-  }
-}
-```
-
-### POST `/api/free-assess`
-
-Pro自由入力を判定し、`free_attempts` に保存する。
-
-パック集計は更新しない。
-
-Requestは `application/json`。音声本体は送らず、iPhoneがAzure Speech SDKから受け取った結果だけを送る。
-
-Fields:
-
-| フィールド | 内容 |
-| --- | --- |
-| `text` | 入力文。 |
-| `azure_result` | Azure Speech SDKの詳細結果JSON。 |
-| `client_timing` | 認識遅延などの個人情報を含まない性能計測値。 |
-| `locale` | 判定ロケール。MVPは`en-US`。 |
-| `timezone` | IANA timezone。 |
-| `attempted_date` | 端末ローカル日付。 |
-| `consent_version` | 自由入力保存同意の版。 |
-| `app_version` | アプリバージョン。 |
-
-処理:
-
-1. Pro entitlementを確認する。
-2. 日次ソフトキャップを確認する。
-3. `profiles.free_text_consent_version` と `profiles.free_text_consented_at` により同意済みか確認する。未同意の場合は `FREE_TEXT_CONSENT_REQUIRED` を返す。
-4. Pythonサービスで正規化とIPA変換を行う。
-5. Azure判定を行う。
-6. `free_attempts` に保存する。
-7. `phoneme_state` 等は更新しない。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "free_attempt_id": "uuid",
-    "overall_score": 75.2,
-    "ipa_result": {},
-    "phoneme_scores": {},
-    "limit": {
-      "used_today": 3,
-      "soft_cap": 20
-    }
-  }
-}
-```
-
-### POST `/api/free-text-consent`
-
-自由入力の初回利用時に、入力文保存への同意状態を保存する。
-
-Request:
-
-```json
-{
-  "consent_version": "free_text_ja_v1"
-}
-```
-
-処理:
-
-1. JWTを検証する。
-2. Pro entitlementを確認する。
-3. `profiles.free_text_consent_version` と `profiles.free_text_consented_at` を更新する。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "free_text_consent_version": "free_text_ja_v1",
-    "free_text_consented_at": "2026-07-04T00:00:00Z"
-  }
-}
-```
-
-### POST `/api/tts`
-
-お手本音声URLを取得する。キャッシュがなければPythonサービスでPiper生成する。
-
-Request:
-
-```json
-{
-  "text": "right",
-  "accent": "US",
-  "speed": "normal"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "cache_key": "tts:US:normal:...",
-    "url": "https://...",
-    "duration_ms": 850
-  }
-}
-```
-
-### GET `/api/advice/:advice_id`
-
-直し方ページを取得する。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "advice_id": "advice_r_to_l_ja_us",
-    "title": "r が l に聞こえています",
-    "short_tip": "舌先をどこにもつけず、口の奥で軽く丸めます。",
-    "comparison_text": "l は舌先が上の歯ぐきに触れます。r は触れません。",
-    "asset_id": "pair_r_to_l",
-    "coach_example_text": "right"
-  }
-}
-```
-
-### POST `/api/advice-feedback`
-
-助言評価を保存する。
-
-Request:
-
-```json
-{
-  "attempt_id": "uuid",
-  "free_attempt_id": null,
-  "advice_id": "advice_r_to_l_ja_us",
-  "rating": "up"
-}
-```
-
-### GET `/api/progress`
-
-進捗画面用データを返す。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "streak": {
-      "current": 7,
-      "longest": 12
-    },
-    "overall_mastery": 72.4,
-    "phoneme_heatmap": [],
-    "mastery_series": [],
-    "level": {
-      "level": 3,
-      "name": "音素トレーナー",
-      "completed_items": 28
-    },
-    "title": {
-      "title_id": "daily_regular",
-      "name": "毎日の発音習慣"
-    },
-    "badges": []
-  }
-}
-```
-
-### POST `/api/export`
-
-学習データをJSONで書き出す。
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "exported_at": "2026-07-04T00:00:00Z",
-    "profile": {},
-    "attempts": [],
-    "phoneme_state": [],
-    "free_attempts": []
-  }
-}
-```
-
-### POST `/api/delete-learning-data`
-
-学習データを削除する。
-
-Request:
-
-```json
-{
-  "confirm": true
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "deleted_at": "2026-07-04T00:00:00Z"
-  }
-}
-```
-
-端末ローカル録音はアプリ側で削除する。サーバーAPIはサーバーデータ削除を担当する。
-
-### POST `/api/revenuecat/webhook`
-
-RevenueCat webhook受信用。クライアントから呼ばない。
-
-処理:
-
-1. RevenueCat webhook authorizationを検証する。
-2. 対象ユーザーを特定する。
-3. `subscriptions` を更新する。
-4. 生イベントを保存する。
+| bootstrap | profile、timezone、trial履歴、entitlement、未完了sessionを安全に取得 |
+| access status | 7 active learning daysと購読から、新規判定・過去閲覧の権限を分離 |
+| daily session | 1焦点音、通常5課題、短縮候補、任意追加、期限復習最大1件を返す |
+| speech token | 認証・アクセス確認後、Azure短期トークンを発行 |
+| assessment normalize | Azure結果を検証・正規化し、主要結果を作る |
+| result persistence | attempt、correction cycle、evidenceを冪等保存 |
+| session completion | Program Dayを冪等完了し、同日二重進行を防ぐ |
+| progress/report | 改善・維持・転移・定着、復習、次の計画を返す |
+| billing webhook | RevenueCatイベントを検証しentitlementを確定 |
+| export/delete | 学習データの書き出しと削除。trial・購読責務を分離 |
 
-## Python推論サービスAPI
+## 4. Bootstrap / access status
 
-Python推論サービスはインターネット公開を避ける。Next.js APIからのみ呼ぶ。
+返すべき概念:
 
-### POST `/internal/ipa`
-
-正規化とIPA変換を行う。
+- profileとlocale
+- trial: started、current Program Day、completed days、Day 7 report状態
+- access: new assessment可否、historical read可否、paywall reason
+- subscription entitlement
+- unfinished session summary
+- overdue review countと今日へ入る最大1件
 
-Request:
+`trial_day`を暦日差から計算しない。`free_trial_ends_at`だけで無料体験を表現しない。ログイン、起動、認証セッション作成だけでProgram Dayを進めない。
 
-```json
-{
-  "text": "I read it again.",
-  "accent": "US"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "normalized_text": "I read it again.",
-    "ipa": "...",
-    "words": [],
-    "oov_words": [],
-    "conversion_confidence": 0.92
-  }
-}
-```
-
-### POST `/internal/tts`
-
-Piperで音声生成する。
-
-Request:
-
-```json
-{
-  "text": "right",
-  "accent": "US",
-  "speed": "slow"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "audio_format": "wav",
-    "audio_base64": "...",
-    "duration_ms": 1200
-  }
-}
-```
-
-## Azure連携
-
-### 入力音声
-
-- iOS側で16kHz、16bit、mono PCMをAzure Speech SDKへ録音中にpushする。
-- `HundredMark`、`Phoneme`、`IPA`、`NBestPhonemeCount = 5`、miscue、prosodyを標準設定とする。
-- `en-US`以外ではロケール別capabilitiesを参照し、取得不能値を0や空文字で補わない。
-
-### 保存
-
-保存する:
-
-- 音声本体を除くAzure JSONレスポンス全文。
-- 正規化済み音素結果。
-- 共通形式のoverall、issues、words、timing、capabilities、target平均、正解フラグ。
-
-保存しない:
-
-- 音声ファイル。
-- Azureへストリーミングした音声のサーバーコピー。
-
-## RevenueCat連携
-
-### クライアント
-
-ExpoアプリはRevenueCat public SDK keyを使う。
-
-MVPでは RevenueCat App User ID に Supabase `auth.users.id` を設定する。
-
-### サーバー
-
-Next.js APIはRevenueCat secret keyを使う。
-
-secret keyは `.env` のサーバー専用変数に置く。`EXPO_PUBLIC_` に置かない。
-
-RevenueCat webhookでは、イベント内の App User ID を Supabase `user_id` として扱い、`subscriptions.revenuecat_app_user_id` と `subscriptions.user_id` を同じユーザーに紐付ける。
-
-## レート制限
-
-MVPで必要な制限:
-
-| 対象 | 制限 |
-| --- | --- |
-| `/api/assess` | 通常利用を妨げない範囲でユーザー単位制限。 |
-| `/api/free-assess` | Proでも1日20回程度のソフトキャップ。 |
-| `/api/tts` | テキスト+速度+アクセントでキャッシュ優先。 |
-| `/api/advice` OpenAI生成 | キャッシュ優先。未知ケースのみ生成。 |
-
-制限超過時のエラー:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "RATE_LIMITED",
-    "message": "今日はこれ以上利用できません。明日また試してください。",
-    "retryable": false
-  }
-}
-```
-
-## エラーコード
-
-| code | retryable | 内容 |
+## 5. Daily session
+
+サーバーは次を検証して返す。
+
+- current Program Day
+- Calendar Date / timezone
+- focus group
+- required item count: 通常5、短縮時は約3
+- item roles: anchor、contrast、transfer、sentence/practical、review
+- overdue reviewは最大1件
+- optional extension最大2件。requiredと明確に分離
+- content、audio、advice、diagram version
+- 未完了位置
+
+同じProgram Dayの再取得は同じsessionを返す。日付変更で未完了sessionを破棄・自動完了しない。未レビューコンテンツを返さない。
+
+## 6. Speech token
+
+- 認証済みで、新規判定権限がある場合だけ発行する。
+- 初期localeは`en-US`。
+- Subscription Keyをレスポンスやログへ含めない。
+- token、region、expires at、refresh timing、capabilitiesを返す。
+- クライアントは失効前に更新する。
+- tokenの実TTLはAzure仕様と実装で確認し、文書例から発明しない。
+
+## 7. Assessment経路
+
+### クライアントから送るもの
+
+- `client_attempt_id`
+- session / item / practice item / content version
+- attempt roleとretry relation
+- Calendar Date / timezone
+- Azure最終結果JSON
+- 音声内容を含まない性能・品質メタデータ
+- app/version情報
+
+送らないもの:
+
+- ユーザー音声ファイル、base64音声、端末音声URI
+- Azure Subscription Key
+- clientが確定したdurable状態
+
+### サーバー検証
+
+1. 認証とアクセス権。
+2. session/itemの所有権と現在状態。
+3. content version、reference text、assessment locale。
+4. payloadサイズ・型・必須Azure項目。
+5. 音声品質・課題一致・対象音の存在。
+6. client attempt IDの重複・payload競合。
+7. attempt roleとadvice提示履歴の整合。
+
+## 8. 主要結果と保存の分離
+
+主要結果は、Azure最終結果と純粋な正規化から生成できる次の情報である。
+
+- 対象焦点音
+- 期待音
+- 近く認識された音（取得できる場合）
+- 今回の結果ラベル
+- 次に試す1行動または良好時の次へ
+- 技術的有効性
+
+長期集計、週次レポート、複数状態再計算、通知更新を主要結果の待ち時間へ含めない。
+
+保存の具体方式はTBD。次の性質は確定する。
+
+- 同じ`client_attempt_id`の再送は同じattemptを返す。
+- 保存失敗でも、クライアントが保持するAzure結果から主要結果を表示できる。
+- 再送時に録音をやり直させない。
+- durable進捗は保存とサーバー検証が成功した後にだけ確定する。
+- クライアントは`persistence_status`を把握できる。
+
+## 9. Session completion
+
+Program Day完了APIまたは同等責務は次を検証する。
+
+- 必須slotが通常または短縮条件を満たす。
+- 少なくとも1つの有効な学習判定がある。
+- optional extensionを必須としていない。
+- 同一Calendar Dateで既に別Program Dayを完了していない。
+- 同じcompletion keyの再送で二重加算しない。
+
+Day 7完了時はレポートを生成可能にし、次回新規判定で`PAYWALL_REQUIRED`相当を返す。
+
+## 10. Progress / report
+
+返す中心情報:
+
+- 焦点群ごとのcurrent state
+- discovered / immediate change / held / transferred / stable / maintenance evidence
+- next Review Due Date、overdue state
+- 日次、Day 7、週次の要約
+- 次の焦点・課題役割
+- selected before/afterのメタデータと端末音声利用可否
+
+総合点、全41音ヒートマップ、レベル、バッジ、称号、日週月グラフを中心レスポンスにしない。
+
+## 11. Trialと課金
+
+アクセス状態を分ける。
+
+| 権限 | trial中 | 購読中 | Day 7後・未購読 |
+| --- | --- | --- | --- |
+| 新規判定 | 可 | 可 | 不可 |
+| 未完了Day継続 | Day 7以前は可 | 可 | Day 7完了済みなら不可 |
+| 過去レポート | 可 | 可 | 可 |
+| 選択before/after | 可 | 可 | 可（端末ファイルがある場合） |
+| 復元・設定・規約 | 可 | 可 | 可 |
+| 書き出し・削除 | 可 | 可 | 可 |
+
+RevenueCat webhookは認証し、再送に耐える。商品ID、Offering、Package、実価格はTBD。
+
+## 12. エラー
+
+| 分類 | retryable | 学習結果 |
 | --- | --- | --- |
-| `UNAUTHORIZED` | false | JWT不正。 |
-| `PAYWALL_REQUIRED` | false | Proまたは無料期間が必要。 |
-| `FREE_TEXT_PRO_REQUIRED` | false | 自由入力はPro限定。 |
-| `FREE_TEXT_CONSENT_REQUIRED` | false | 自由入力保存同意が必要。 |
-| `RATE_LIMITED` | false | レート制限。 |
-| `AZURE_ASSESSMENT_FAILED` | true | Azure判定失敗。 |
-| `IPA_CONVERSION_FAILED` | true | IPA変換失敗。 |
-| `TTS_FAILED` | true | TTS生成失敗。 |
-| `OPENAI_ADVICE_FAILED` | true | OpenAI助言生成失敗。 |
-| `SUPABASE_SAVE_FAILED` | true | DB保存失敗。 |
-| `REVENUECAT_UNAVAILABLE` | true | 購読状態確認失敗。 |
+| 技術的無効録音 | yes | 無効。attempt上限・状態へ含めない |
+| Azure判定失敗 | yes | 無効 |
+| 保存失敗 | yes | 主要結果表示可。durable進捗は保留 |
+| idempotency payload conflict | no | 既存結果を保護し、競合を報告 |
+| paywall required | no | 過去閲覧は維持 |
+| entitlement unavailable | yes | 新規判定前に再確認 |
+| invalid content/session | 状況次第 | 成果へ含めない |
 
-## セキュリティ禁止事項
+エラーレスポンスへ秘密、外部生トークン、個人音声を含めない。
 
-- AzureキーをExpoアプリへ渡さない。
-- OpenAI APIキーをExpoアプリへ渡さない。
-- Supabase service role keyをExpoアプリへ渡さない。
-- RevenueCat secret keyをExpoアプリへ渡さない。
-- Pythonサービス内部APIキーをExpoアプリへ渡さない。
-- エラーログに秘密値を保存しない。
-- APIレスポンスに秘密値を含めない。
+## 13. データ削除・書き出し
 
-## フェーズ4セルフレビュー
+- 本人認証・所有権を検証する。
+- 学習データ削除と無料体験履歴・購読状態の削除責務を分ける。
+- 学習削除でtrialを再付与しない。
+- 端末ローカル音声の削除はアプリが担当し、サーバー結果と両方の完了/失敗を表示する。
+- 書き出しへ音声、秘密、内部ログ、他ユーザーデータを含めない。
+- 削除と再送の競合を考慮する。具体方式はTBD。
 
-- マスター設計書・既作成ドキュメントとの矛盾: バックエンド経由Azure、Python音素処理、Piper都度生成、OpenAIテンプレ優先、RevenueCat/IAP、自由入力分離を反映済み。
-- Codexが実装に着手できる具体性: 主要エンドポイント、リクエスト/レスポンス、処理順、エラーコード、サーバー間APIを定義済み。
-- 用語・命名の一貫性: `daily_session_id`、`attempt_id`、`free_attempt_id`、`phoneme_results`、`advice_id` をDB仕様と一致させた。
+## 14. 現行APIとの境界
+
+現在実装には`/api/bootstrap`、`/api/access-status`、`/api/daily-session`、`/api/speech-token`、`/api/assess`、進捗、課金、自由入力、TTS、助言、Python内部API等がある。
+
+新仕様でも認証、短期トークン、Azure結果正規化、RevenueCat、書き出し・削除の基礎は再利用候補である。一方、自由入力、実行時TTS/助言、旧集計はMVP中心経路の対象外。URLの維持・廃止は第4段階以降に決める。第3段階ではAPIコードを変更しない。
+
+## 15. TBD
+
+- 具体的なURL、request/response schema
+- 正規化と保存を同一応答でどう分離するか
+- RPC/outbox/queue/再計算の選択
+- レート制限値
+- 正式な性能SLO
+- 旧API廃止時期

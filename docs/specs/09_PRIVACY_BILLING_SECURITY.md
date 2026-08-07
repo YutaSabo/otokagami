@@ -1,322 +1,240 @@
-# Privacy, Billing, Security
+# Otokagami プライバシー・課金・セキュリティ仕様
 
-## 目的
+> 文書状態: 現役
 
-この仕様は、Pronunciation Mirror MVP のプライバシー、課金、シークレット管理、セキュリティ、データ削除/書き出しのルールを定義する。
+## 1. プライバシー原則
 
-## プライバシー原則
+1. ユーザー音声を自社サーバー、DB、Supabase Storageへ送信・保存しない。
+2. 音声はAzure短期トークンでiPhoneからAzureへ直接ストリーミングする。
+3. 代表before／afterだけを端末で短期保持する。
+4. 学習に不要な個人情報を収集しない。
+5. trial、subscription、学習データ削除を別責務として扱う。
+6. 秘密とprotected writeをクライアントへ委ねない。
 
-1. ユーザー音声をサーバーに保存しない。
-2. Azure判定の音声は端末からAzureへ短期トークンで直接送信し、自社バックエンドを通さない。
-3. 端末ローカル録音はユーザー機能として保存してよい。
-4. 自由入力のraw textは、初回同意後にのみ保存する。
-5. 自由入力はPIIを含みうるため、削除対象に必ず含める。
-6. デイリー集計と自由入力ログを分離する。
-7. APIキー、service role key、秘密トークンをクライアントに置かない。
+## 2. ユーザー音声
 
-## 保存するデータ
+### Azureへの送信
 
-### ユーザー基本情報
+- 初期判定は`en-US`。
+- Azure Subscription Keyはサーバーだけに置く。
+- アプリへ渡すのは短期トークン、region、期限、capabilitiesだけ。
+- 自社APIは音声ファイル、base64音声、端末音声URIを受け取らない。
+- Azureのデータ取扱いは公開前に最新の提供条件とプライバシー表示を確認する。現時点の外部設定は未確認。
 
-- Supabase anonymous auth user id。
-- `anon_public_id`。
-- `native_language = und`（未指定）。任意の母語コードは助言ローカライズ用途に限定し、判定補正に使わない。
-- `target_accent = US`。
-- 無料期間開始日時。
-- timezone。
-- 通知設定。
-- 再生速度設定。
-- 自由入力保存同意の版と同意日時。
-- 端末識別補助IDのハッシュとユーザー紐付け。
+### 端末保持
 
-### パック練習ログ
+- 代表的なbefore／afterだけ。
+- 最大30暦日。
+- 対応する14日復習完了後は、30日を待たず削除対象にできる。
+- 学習データ削除時は即時削除対象。
+- 長期録音ライブラリを作らない。
+- URI切れ、ファイル欠損、端末変更時にもレポート・状態画面を壊さない。
 
-- 録音日時。
-- ローカル練習日。
-- 問題ID。
-- attempt_no。
-- 音素ごとのスコア。
-- 期待音素。
-- 実測音素。
-- overall。
-- target平均。
-- Azureの音声本体を除くJSONレスポンス。
-- 端末/OS/アプリバージョン。
+ローカルファイルのバックアップ除外、暗号化、端末移行時の扱いはTBDであり、実装前に確認する。
 
-### 集計状態
+## 3. 保存する学習データ
 
-- 音素ごとのEWMA。
-- 練習回数。
-- 最終練習日。
-- 次回復習日。
-- 日次スナップショット。
-- ストリーク算出用ログ。
-- レベル/バッジ/称号算出用ログ。
+- anonymous user ID、timezone、coaching/assessment locale
+- Program DayとCalendar Date
+- 管理課題ID・version・焦点音・課題役割
+- 有効/無効attempt、無効理由
+- 音声本体を除くAzure結果と正規化結果
+- correction cycleとadvice version
+- 発見、即時改善、維持、転移、定着、メンテナンス証拠
+- Review Due Date、日次/Day 7/週次レポート
+- 音声内容を含まない性能・エラー情報
+- trial履歴、購読状態
 
-### 自由入力ログ
+保存しないもの:
 
-Proユーザーが同意した場合のみ保存する。
+- ユーザー音声のサーバーコピー
+- 自由入力文（MVPに自由入力がないため）
+- 秘密、Authorizationヘッダー、短期トークン
+- 国籍・母語による採点補正データ
+- ネイティブらしさの順位
 
-- 入力文。
-- 正規化文。
-- IPA変換結果。
-- OOV語。
-- 変換確信度。
-- 音素ごとスコア。
-- 単語ごとスコア。
-- overall。
-- Azureの音声本体を除くJSONレスポンス。
-- PIIフラグ。
-- 同意文バージョン。
+## 4. 7 active learning days
 
-## 保存しないデータ
+### 方式
 
-- ユーザー音声ファイルのサーバーコピー。
-- Supabase Storage上のユーザー音声。
-- Azureへ送信した一時音声の永続コピー。
-- 実際のAPIキーや秘密トークン。
-- クライアント側ログ内の秘密値。
+- アプリ管理。
+- 自動課金なし。
+- AppleのIntroductory Offerを使用しない。
+- 最初の有効な学習判定で開始。
+- 7暦日ではなく、完了した7回の有効学習日。
 
-## 音声の扱い
+### 進行
 
-### ユーザー音声
+- Program Dayは有効な日次セッション完了時だけ進む。
+- 起動、ログイン、匿名認証、暦日の経過だけでは進まない。
+- 学習しない日、開いただけの日、未完了日は数えない。
+- 1 Calendar Dateで最大1 Program Day。
+- 未完了Dayは後日も同じ位置から再開。
+- Review Due Dateは実日付で進み、期限超過は失敗にも自動消化にもならない。
 
-ユーザー音声は、判定時にiPhoneからAzureへリアルタイムストリーミングする。自社バックエンドは音声本体を受信しない。Azure Subscription Keyはサーバーだけが保持し、アプリへは10分有効の短期トークンだけを返す。
+### 終了
 
-端末ローカルには、ユーザーが聞き返すために保存してよい。データ削除時には端末ローカル録音も削除する。
+Day 7完了後にレポートを表示する。次の新規判定、すなわち8回目の学習日へ進む前に購入を案内する。
 
-### お手本音声
+購入しなくても閲覧可能:
 
-Piperで生成したお手本音声は、Supabase Storage等にキャッシュしてよい。これはユーザー音声ではない。
+- 過去レポート、過去の改善状態
+- 選択されたbefore／after（端末ファイルが残る場合）
+- 設定、購入復元
+- データ書き出し・削除
+- プライバシーポリシー、利用規約等
 
-## 自由入力の同意
+## 5. 購読
 
-自由入力の初回利用時に、入力文が保存されることを明示し、同意を取る。
+### 構造
 
-同意文で最低限伝えること:
+- iOS IAPの月額・年額購読。
+- RevenueCatでOffering、Package、entitlement、購入復元、webhookを管理。
+- 実価格、商品ID、Offering、PackageはTBD。
+- 価格は市場調査、Azure原価、Apple手数料、継続率を確認してから決める。
 
-- 入力文は発音判定と将来の教材改善のため保存される。
-- 個人名、住所、電話番号、機密情報を入力しないこと。
-- 音声ファイルはサーバー保存されない。
-- 学習データ削除で自由入力ログも削除される。
+設計書やフォールバックUIに未検証の固定価格を表示しない。ストアまたはRevenueCatから検証できない価格で購入を開始しない。
 
-同意の版を `consent_version` として保存する。
+### アクセス制御
 
-ユーザー単位の同意済み状態は `profiles.free_text_consent_version` と `profiles.free_text_consented_at` に保存する。`free_attempts.consent_version` には、その判定ログで使われた同意文の版を保存する。履歴専用テーブルはMVPでは作らない。
+| 機能 | trial中 | 購読中 | Day 7後・未購読 |
+| --- | --- | --- | --- |
+| 新規Azure判定 | 可 | 可 | 不可 |
+| 管理課題の新規セッション | 可 | 可 | 不可 |
+| 過去レポート・状態 | 可 | 可 | 可 |
+| 選択before/after | 可 | 可 | 可（ファイルがある場合） |
+| 購入復元・設定・規約 | 可 | 可 | 可 |
+| 書き出し・削除 | 可 | 可 | 可 |
 
-## PII
-
-MVPでは高度なPII匿名化までは必須にしない。ただし、`free_attempts.pii_flag` を持つ。
-
-PII疑いの判定は次のいずれかでよい。
-
-- クライアントまたはサーバーで簡易ルール検出。
-- 将来の高度検出に備えて常にfalseで初期実装し、スキーマだけ確保。
-
-MVPでは、PII疑いの有無にかかわらずユーザー削除時に `free_attempts` を削除する。
-
-## 課金
-
-### プラン
-
-| プラン | 内容 |
-| --- | --- |
-| 無料期間 | 初回から7日間。アプリ側で管理。自由入力を除くMVP機能を利用可。 |
-| Pro | デイリー練習、判定、進捗、履歴、苦手ドリル、自由入力、広告なし。 |
-
-価格想定:
-
-- 月額580円。
-- 年額4,980円。
-
-### 無料期間
-
-無料期間の起点は `profiles.free_trial_started_at` とする。サーバー側で管理する。
-
-再インストールによる無料期間リセット対策として、端末側ではKeychainに補助IDを保存する。サーバー側では生の補助IDを保存せず、ハッシュ化した `device_install_id_hash` を `installations` に保存する。
-
-同じ `device_install_id_hash` が再度 `/api/bootstrap` に送られた場合、既存行の `last_seen_at` を更新し、無料期間を再付与しない。7日トライアルは課金モデルの根幹であるため、MVPでこの対策を弱めない。
-
-### 8日目以降
-
-8日目以降、Pro entitlementが有効でない場合は課金ウォールを表示する。
-
-この仕様は「8日目に自動でPro」ではない。ユーザーがPro登録しない限り課金しない。
-
-### Appleイントロオファー
-
-サブスク商品にAppleのイントロオファーは付けない。
-
-理由:
-
-- アプリ側7日無料期間とApple側無料トライアルが重なると、意図せず無料期間が延びるため。
+クライアントのPaywall表示だけをアクセス制御にしない。API・データポリシー境界でtrialとentitlementを検証する。
 
 ### RevenueCat
 
-RevenueCatを購読管理に使う。
+- クライアントはpublic SDK keyのみ。
+- secretとwebhook authorizationはサーバーだけ。
+- App User IDとSupabase userの対応を検証する。
+- webhookを認証し、再送をidempotentに扱う。
+- 購入復元を常に提供する。
+- sandbox動作は未確認であり、MVP完成前の実機検証対象。
 
-- ExpoアプリはRevenueCat public SDK keyを使う。
-- Next.js APIはRevenueCat secret keyを使う。
-- RevenueCat App User ID は Supabase `auth.users.id` と同じ値に統一する。
-- webhookで `subscriptions` を更新する。
-- 購入復元を設定画面に置く。
+## 6. 無料体験の不正再付与防止
 
-### Stripe
+- 端末Keychain等の補助IDを利用できる。
+- サーバーにはハッシュだけを保存する。
+- 生のIDをログへ残さない。
+- 学習データ削除でtrial履歴を消さない。
+- 匿名アカウント再作成だけで自動再付与しない。
+- 端末IDだけを本人認証やprotected dataの唯一の権限根拠にしない。
 
-iOS MVPではStripeを使わない。Stripeは将来Web版用の技術メモとして残す。
+再インストール、端末変更、アカウント復元の具体挙動はTBD。過度な追跡を避け、プライバシー表示と整合させる。
 
-## アクセス制御
+## 7. データ削除
 
-### 練習可能条件
-
-練習開始には次のどちらかが必要。
-
-- 無料期間中。
-- RevenueCat Pro entitlementが有効。
-
-### 自由入力可能条件
-
-自由入力には次をすべて満たす必要がある。
-
-- Pro entitlementが有効。
-- 自由入力保存同意が済んでいる。
-- 日次ソフトキャップ未満。
-
-無料期間中でも自由入力は使えない。
-
-## シークレット管理
-
-### ファイル
-
-- `.env.example` はコミットする。
-- `.env` はコミットしない。
-- `.env.local` はコミットしない。
-- `.env.*` は原則コミットしない。
-
-`.gitignore` で上記を除外する。
-
-### Codex運用ルール
-
-Codexは実際のキー値を要求・出力・コミットしない。
-
-キーが必要な作業に着手する前に値が未設定であれば、Codexは次の形式で依頼する。
-
-```text
-.env の AZURE_SPEECH_KEY をローカルで埋めてください。値はチャットに書かないでください。
-```
-
-`.env.example` に変数を追加した場合、Codexは新しく埋める必要がある変数名をユーザーへ知らせる。
-
-### Expo公開禁止
-
-次は絶対に `EXPO_PUBLIC_` にしない。
-
-- Azure Speech key。
-- OpenAI API key。
-- Supabase service role key。
-- RevenueCat secret key。
-- RevenueCat webhook auth token。
-- Python service API key。
-
-## レート制限
-
-### 自由入力
-
-Proでも1日20回程度のソフトキャップを設ける。
-
-超過時は、翌日また試すよう案内する。
-
-### TTS
-
-Piper生成はキャッシュ優先にする。キャッシュキーはテキスト、アクセント、速度を含める。
-
-### OpenAI
-
-OpenAIは未知ケースのみ。頻出混同ペアはテンプレ助言を使う。
-
-### Azure
-
-通常のデイリー練習を妨げない範囲で、ユーザー単位の過剰利用制限を設ける。
-
-## データ削除
-
-設定画面から学習データ削除を実行できる。
+### 学習データ削除
 
 削除対象:
 
-- `attempts`
-- `attempt_phoneme_results`
-- `daily_sessions`
-- `daily_session_items`
-- `phoneme_state`
-- `phoneme_snapshots`
-- `user_badges`
-- `user_bookmarks`
-- `free_attempts`
-- `advice_feedback`
-- 端末ローカル録音。
+- session、attempt、音素結果
+- correction cycle、学習証拠、focus state、review schedule
+- reports、学習設定、助言評価
+- 端末ローカルbefore／after
 
-削除後:
+削除しない責務:
 
-- 進捗、ストリーク、レベル、バッジ、称号は初期状態に戻る。
-- 無料期間の起点と購読状態は削除しない。課金回避に使われないようにする。
+- 購読状態
+- 購入復元に必要な記録
+- 無料体験再付与防止に必要な最小履歴
 
-## データ書き出し
+これらの具体保持期間と法的根拠はTBD。学習削除とアカウント退会を同一操作として曖昧にしない。
 
-設定画面からJSON形式の簡易書き出しを実行できる。
+### 退会・全体削除
+
+退会時のauth user、課金記録、法的保持、匿名化の具体仕様はTBD。RevenueCat/Apple上の購読解約と自社データ削除が別操作であることを説明する。
+
+## 8. データ書き出し
 
 含める:
 
-- ユーザー設定。
-- 練習ログ。
-- 音素結果。
-- 音素状態。
-- スナップショット。
-- バッジ。
-- ブックマーク。
-- 自由入力ログ。
-- 助言評価。
+- profile設定
+- Program Day / session / attempt
+- 正規化結果、改善状態、復習、レポート
+- コンテンツ・助言version
 
 含めない:
 
-- ユーザー音声ファイル。
-- APIキー。
-- サーバー内部ログ。
+- 音声ファイル
+- APIキー、token、Authorization
+- 内部の不正防止ハッシュ
+- 他ユーザー情報
+- 外部サービスの秘密や生イベント
 
-## ログ
+## 9. シークレット
 
-エラーログに保存してよい:
+### クライアントへ置いてよい公開前提値
 
-- エラーコード。
-- 外部サービス名。
-- 操作名。
-- HTTP status。
-- retryableかどうか。
-- ユーザーID。
-- 発生日時。
+- Supabase URL / anon key
+- API base URL
+- RevenueCat iOS public SDK key
 
-保存してはいけない:
+### クライアントへ置かないもの
 
-- APIキー。
-- Authorizationヘッダー。
-- service role key。
-- RevenueCat secret。
-- ユーザー音声。
+- Azure Speech key
+- Supabase service role
+- RevenueCat secret / webhook authorization
+- OpenAI key、Python internal key等、現在実装に残るサーバー秘密
 
-## セキュリティ受け入れ条件
+`.env`、`.env.local`、秘密を含むファイルをコミットしない。ログ、エラー、書き出し、Todoist、文書へ実値を記録しない。
 
-- `.env` がGit管理されていない。
-- `.env.example` に必要変数が列挙されている。
-- Expoアプリにサーバー専用キーが含まれていない。
-- Azure/OpenAI/RevenueCat secret/service roleの呼び出しはサーバー側だけ。
-- RLSが有効で、ユーザーは自分の行だけ読める。
-- マスターデータの書き込みはservice roleだけ。
-- RevenueCat webhookが認証されている。
-- Python推論サービスが内部APIキーで保護されている。
-- 音声ファイルがサーバー保存されていない。
+## 10. 認可
 
-## フェーズ4セルフレビュー
+- APIはSupabase JWTを検証する。
+- ユーザーは本人のデータだけを読める。
+- active content、subscription、trial、durable evidenceはtrusted serverまたはdata policy境界だけが確定できる。
+- クライアントが他人のsession IDやattempt IDを送っても拒否する。
+- delete/exportは本人所有範囲だけに限定する。
+- RLSとAPIの負の経路を自動テストする。
 
-- マスター設計書・既作成ドキュメントとの矛盾: 音声非保存、自由入力同意、7日無料後課金ウォール、RevenueCat、IAPのみ、Stripe将来扱い、シークレット運用を反映済み。
-- Codexが実装に着手できる具体性: 保存/非保存、削除/書き出し、課金条件、キー配置、ログ禁止事項を明記済み。
-- 用語・命名の一貫性: `free_trial_started_at`、Pro entitlement、`free_attempts`、`EXPO_PUBLIC_` を既存仕様と一致させた。
+## 11. ログ・分析
+
+保存してよい:
+
+- secret-free error code、operation、provider、HTTP status
+- 個人音声を含まない区間レイテンシ
+- technical validity reason
+- app/OS/device classの必要最小限
+- Azure原価推定に必要な非内容メタデータ
+
+保存しない:
+
+- 音声、Authorization、短期トークン、API key
+- 不要な英文全文や個人情報
+- RevenueCat secret、生の個人識別値
+
+## 12. コンテンツと外部生成
+
+MVPは管理課題だけを判定する。実行時OpenAI助言、実行時Piper音声、実行時Python変換を中心経路から外し、事前生成・レビュー済み資産を使う。これにより、実行時の外部送信、揺らぎ、追加待ち時間を減らす。
+
+現在コードに残る旧機能は第3段階では変更しない。MVPアクセス経路からの除外は第4段階以降。
+
+## 13. セキュリティ受け入れ条件
+
+- ユーザー音声が自社サーバー/DB/Storageへ保存されない。
+- Azure key等の秘密がクライアントbundleへ入らない。
+- 短期トークンの期限と更新が安全に扱われる。
+- idempotencyでattempt、Program Day、RevenueCat eventを重複処理しない。
+- durable進捗をクライアントだけで偽装できない。
+- trial履歴と学習削除が分離される。
+- Day 7後も過去データへの権利が維持される。
+- RLS/APIで他人のread/writeが拒否される。
+- export/deleteが本人範囲で動く。
+- secret redactionが負のテストを通る。
+
+## 14. 未確認・TBD
+
+- 実価格、商品、Offering、Package
+- RevenueCat sandboxとwebhook実接続
+- Hosted Supabase状態
+- Azure外部データ保持設定
+- 退会・法的保持期間
+- ローカル音声暗号化・バックアップ除外
+- 端末変更時のtrial復元

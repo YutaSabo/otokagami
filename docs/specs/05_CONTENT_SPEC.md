@@ -1,358 +1,174 @@
-# Content Spec
+# Otokagami コンテンツ仕様
 
-## 目的
+> 文書状態: 現役
+> 対象: 管理課題、音声、助言、図解、レビュー
 
-この仕様は、Pronunciation Mirror MVPで使う音素ID、子音連結グループ、練習パック、直し方ページ、助言テンプレ、静的アセットを定義する。
+## 1. 原則
 
-音素IDはDB、API、UI、コンテンツ生成、ヒートマップ、バッジ条件の主キーとして使う。実装中に勝手に変更してはならない。
+- MVPで判定するのは、アプリ側が用意・管理する課題だけ。
+- 問題文、正規化文、IPA、焦点位置、標準/スロー音声、助言、図解を事前に生成・レビューする。
+- 実行時にOpenAIで助言を作らない。
+- 実行時にPiperでお手本音声を作らない。
+- 未レビュー、Azure未検証、placeholderの資産を公開対象にしない。
+- coaching localeとassessment localeを分離する。
+- 初期教材を日本人専用の採点・出題構造にしない。
 
-## 音素ID設計
+## 2. 初期8焦点群
 
-### 原則
-
-- 内部IDはASCIIのsnake_caseまたは短い英字IDにする。
-- IPA記号は表示値として持つ。
-- Azureの返却表現はAPI層で内部IDへ正規化する。
-- MVPの目標アクセントは US のみ。
-- UK用の拡張余地は持つが、MVPでは無効化する。
-
-## 子音
-
-MVPの子音IDは24個。
-
-| phoneme_id | IPA | 例 |
-| --- | --- | --- |
-| `p` | /p/ | pen |
-| `b` | /b/ | boy |
-| `t` | /t/ | tea |
-| `d` | /d/ | day |
-| `k` | /k/ | key |
-| `g` | /g/ | go |
-| `f` | /f/ | fan |
-| `v` | /v/ | van |
-| `theta` | /θ/ | think |
-| `dh` | /ð/ | this |
-| `s` | /s/ | see |
-| `z` | /z/ | zoo |
-| `sh` | /ʃ/ | she |
-| `zh` | /ʒ/ | vision |
-| `h` | /h/ | he |
-| `ch` | /tʃ/ | cheese |
-| `j` | /dʒ/ | judge |
-| `m` | /m/ | me |
-| `n` | /n/ | no |
-| `ng` | /ŋ/ | sing |
-| `l` | /l/ | light |
-| `r` | /r/ | right |
-| `w` | /w/ | we |
-| `y` | /j/ | yes |
-
-## 単母音
-
-MVPの単母音IDは12個。
-
-| phoneme_id | IPA | 例 |
-| --- | --- | --- |
-| `iy` | /i/ | see |
-| `ih` | /ɪ/ | sit |
-| `eh` | /ɛ/ | bed |
-| `ae` | /æ/ | cat |
-| `aa` | /ɑ/ | hot |
-| `ao` | /ɔ/ | thought |
-| `uh` | /ʊ/ | book |
-| `uw` | /u/ | food |
-| `ah` | /ʌ/ | cup |
-| `ax` | /ə/ | about |
-| `er` | /ɝ/ | bird |
-| `a` | /ə/ or reduced vowel | unstressed a |
-
-`ax` と `a` はMVP実装時にAzure/IPA変換の返却に合わせて正規化する。DB主キーとしては両方を持つが、UIでは必要に応じて同じ説明文を使ってよい。
-
-## 二重母音
-
-MVPの二重母音IDは5個。
-
-| phoneme_id | IPA | 例 |
-| --- | --- | --- |
-| `ey` | /eɪ/ | day |
-| `ay` | /aɪ/ | my |
-| `oy` | /ɔɪ/ | boy |
-| `aw` | /aʊ/ | now |
-| `ow` | /oʊ/ | go |
-
-## 子音連結グループ
-
-子音連結は音素そのものではなく、出題タグとして扱う。
-
-| cluster_id | 例 |
+| focus group | 対象 |
 | --- | --- |
-| `str` | street |
-| `spr` | spring |
-| `spl` | split |
-| `skr` | screen |
-| `skw` | square |
-| `tr` | tree |
-| `dr` | dream |
-| `br` | brown |
-| `gr` | green |
-| `pr` | price |
-| `fl` | fly |
-| `gl` | glass |
-| `kl` | clean |
-| `pl` | play |
-| `kt` | asked |
-| `pt` | stopped |
-| `ld` | world |
-| `nd` | hand |
-| `nt` | want |
-| `mp` | jump |
+| `r_l` | `/r/` と `/l/` |
+| `theta_st` | `/θ/` と `/s, t/` |
+| `eth_zd` | `/ð/` と `/z, d/` |
+| `v_b` | `/v/` と `/b/` |
+| `ae_eh` | `/æ/` と `/ɛ/` |
+| `ih_iy` | `/ɪ/` と `/iː/` |
+| `final_consonants` | 語末子音 |
+| `consonant_clusters` | 子音連結 |
 
-子音連結グループは `practice_items.target_cluster_ids` に保存する。`phoneme_state` は音素単位で更新し、cluster専用の習熟度テーブルはMVPでは作らない。
+選定理由は、意味の区別に影響しやすいこと、動作コツを作れること、管理課題と転移課題を用意できること、複数市場へ転用できる可能性である。特定母語の学習者だけに適用するリストではない。
 
-## 初期練習パック
+正式な有効化には、各焦点群ごとに発音指導者レビューとAzure実機検証が必要である。
 
-### 最低シード量
+## 3. 公開最低量
 
-各音素につき最低:
+| 資産 | 最低量 |
+| --- | ---: |
+| 焦点群課題 | 8群 × 12 = 96 |
+| 初回診断候補 | 8 |
+| 管理課題合計 | 約104 |
+| 標準・スロー音声 | 約208ファイル |
+| 焦点群ごとの主・代替コツ | 16件 |
+| 汎用コツ | 5件 |
+| 助言合計 | 最低21件 |
+| 正式図解 | 最低8件 |
 
-- 単語5件。
-- 文3件。
+「約104」は、96焦点群課題と8診断候補の合計を指す。診断候補を焦点群課題と兼用する場合も、ユーザーに提供できる一意の管理課題と役割が不足しないことを確認する。
 
-合計目安:
+## 4. 1焦点群あたり12課題
 
-- 音素41個 × 単語5 = 205単語。
-- 音素41個 × 文3 = 123文。
+| role | 最低数 | 目的 |
+| --- | ---: | --- |
+| アンカー単語 | 2 | 基準となる無補助判定 |
+| 対照課題 | 2 | 近い音との差 |
+| 転移単語 | 3 | 異なる語彙・音位置への転移 |
+| 短文 | 2 | 短い文脈への転移 |
+| 実用文 | 2 | 日常・仕事等の自然な文脈 |
+| 7日/14日別課題 | 1 | 記憶した同一文に依存しない確認 |
+| 合計 | 12 |  |
 
-子音連結グループは各グループにつき最低:
+同じ文章を役割名だけ変えて水増ししない。具体的な英文はTBDであり、本段階では確定しない。
 
-- 単語3件。
-- 文2件。
+## 5. 初回スクリーニング
 
-### ローンチ最小セット
+- ユーザーが実行する課題数は通常5課題を基本とする。
+- コンテンツ側には8つの診断候補を用意し、複数焦点群の証拠を効率よく得られるようにする。
+- 1課題に複数候補音を含めても、ユーザーへ提示する焦点音は1つ。
+- 41音の網羅診断やネイティブらしさの総合順位を目的にしない。
+- 焦点音が見つからない場合は技術失敗と良好判定を区別し、弱点を捏造しない。
 
-MVPローンチ時点では、少なくとも次を用意する。
+## 6. 管理課題の必須メタデータ
 
-- 全音素40前後に対応する練習パック。
-- 初期検証対象とする代表混同ペアの直し方ページ10〜15件。
-- 優先直し方ページに対応する図解アセット。
-
-優先対象は、L/R、TH、母音長、V/B、`theta` と `s` / `t` の混同、語末子音を中心にする。これは初回リリースで検証する対象であり、利用者の国籍・母語を限定するものではない。
-
-残りの直し方ページは合計30〜50件を順次追加する。MVP完了のブロッカーにはしない。
-
-### practice_item の要件
-
-各問題は次の情報を持つ。
-
-| 項目 | 内容 |
+| 概念 | 内容 |
 | --- | --- |
-| `practice_item_id` | 安定ID。 |
-| `item_type` | `word` または `sentence`。 |
-| `text` | 表示する英語。 |
-| `normalized_text` | 判定・IPA変換用の正規化テキスト。 |
-| `target_phoneme_ids` | 練習対象音素。 |
-| `target_cluster_ids` | 子音連結タグ。該当なしは空配列。 |
-| `expected_ipa` | 表示用IPA。 |
-| `accent` | `US`。 |
-| `source` | `seed_ai_generated`、`manual_reviewed` など。 |
-| `is_active` | 出題対象か。 |
+| 安定ID・version | 参照と結果再現に使う |
+| target language / locale | 初期は英語 / `en-US` |
+| coaching locale | 初期は`ja-JP` |
+| text / normalized text | 表示用とAzure参照用 |
+| expected IPA | レビュー済み表示用 |
+| focus group / target position | 対象音と位置 |
+| prompt role | anchor、contrast、transfer、sentence、review等 |
+| difficulty / context | 語位置、文長、実用場面 |
+| audio asset IDs | standard、slow |
+| advice IDs | 主コツ、代替コツ、汎用 |
+| diagram asset ID | 焦点群に対応 |
+| recording constraints | 単語・文の最大時間等。具体値は実機検証で調整 |
+| review status | draft、linguistic_reviewed、azure_validated、active等 |
+| market tags | 発見・表示用。採点補正には使わない |
 
-### 生成方針
+Azure返却記号をコンテンツ主キーとして直接使わず、内部の安定IDへ正規化する。
 
-- AIで事前生成してよい。
-- 生成後、人間または検証工程でレビューする。
-- 本番出題対象にするには `is_active = true` とする。
-- 未レビューの練習パック、直し方ページ、図解アセットは `is_active = false` またはアプリから参照されない状態にする。
-- ユーザーのレビュー通過分のみ `is_active = true` として出題・表示対象にする。
-- 音声は事前同梱しない。Piperで都度生成し、キャッシュする。
+## 7. お手本音声
 
-## 初期パック例
+- 標準とスローを各課題に用意する。
+- 全音声を事前生成し、自然さ、対象音、速度、音量をレビューする。
+- 実行時生成を中心経路に含めない。
+- 配信方法はアプリ同梱または静的配信を選べる。最終方式はTBD。
+- 同一versionの課題と音声を対応付ける。
+- 速度変更で不自然な母音長や子音脱落が起きていないことを確認する。
 
-以下は形式例であり、実装時のseed全量ではない。
+約104課題に標準/スローを用意するため、公開最低ラインは約208ファイルである。
 
-| practice_item_id | type | text | target_phoneme_ids | expected_ipa |
-| --- | --- | --- | --- | --- |
-| `word_r_001` | word | right | [`r`] | /raɪt/ |
-| `word_l_001` | word | light | [`l`] | /laɪt/ |
-| `word_theta_001` | word | think | [`theta`] | /θɪŋk/ |
-| `word_v_001` | word | van | [`v`] | /væn/ |
-| `word_ae_001` | word | cat | [`ae`] | /kæt/ |
-| `sent_r_001` | sentence | I read it again. | [`r`] | IPA service generated |
+## 8. 助言
 
-seed全量は別工程で生成する。生成スクリプトの仕様はこのドキュメントと `06_DATA_MODEL.md` のスキーマに従う。
+### 構成
 
-## MVP混同ペア
+- 1つの行動だけを1〜2文で説明。
+- 焦点群ごとに主コツと代替コツを各1件、合計16件。
+- 汎用コツ5件。
+- 合計最低21件。
+- advice ID、version、coaching locale、対象焦点群、対応図解を持つ。
 
-MVPでは、初期検証対象とする代表混同ペアとして以下を直し方ページの対象にする。これは実装・検証範囲を定める候補リストであり、特定の国籍・母語に対するスコア補正や出題制限には使わない。
+### 汎用コツ候補
 
-| confusion_pair_id | 期待 | 実測 | 優先度 |
-| --- | --- | --- | --- |
-| `r_to_l` | `r` | `l` | high |
-| `l_to_r` | `l` | `r` | high |
-| `theta_to_s` | `theta` | `s` | high |
-| `theta_to_t` | `theta` | `t` | high |
-| `dh_to_z` | `dh` | `z` | high |
-| `dh_to_d` | `dh` | `d` | high |
-| `v_to_b` | `v` | `b` | high |
-| `b_to_v` | `b` | `v` | medium |
-| `f_to_h` | `f` | `h` | medium |
-| `w_to_u` | `w` | `uw` | medium |
-| `ae_to_eh` | `ae` | `eh` | high |
-| `ih_to_iy` | `ih` | `iy` | high |
-| `iy_to_ih` | `iy` | `ih` | medium |
-| `ah_to_aa` | `ah` | `aa` | medium |
-| `aa_to_ah` | `aa` | `ah` | medium |
-| `uh_to_uw` | `uh` | `uw` | high |
-| `er_to_ah` | `er` | `ah` | high |
-| `ng_to_n` | `ng` | `n` | medium |
-| `z_to_s` | `z` | `s` | medium |
-| `s_to_sh` | `s` | `sh` | medium |
-| `sh_to_s` | `sh` | `s` | medium |
-| `ch_to_sh` | `ch` | `sh` | medium |
-| `j_to_ch` | `j` | `ch` | medium |
-| `final_t_missing` | `t` | null | high |
-| `final_d_missing` | `d` | null | high |
-| `final_s_missing` | `s` | null | high |
-| `final_z_missing` | `z` | null | high |
-| `final_l_missing` | `l` | null | high |
+- 子音全般
+- 母音全般
+- 語末子音
+- 子音連結
+- 音声を十分確認できない場合の再録音案内
 
-## 汎用直し方ページ
+汎用コツもレビュー対象であり、未知ケースを実行時AIへ送らない。
 
-混同ペアに対応するページがない場合は、汎用ページを使う。
+## 9. 図解
 
-汎用ページの種類:
+- 最低8件、各焦点群に少なくとも1件。
+- 口、舌、歯、唇、息、声帯等の必要な動作を助言と一致させる。
+- placeholder文字やasset IDだけを正式図解として数えない。
+- 色だけに依存しない。
+- 発音指導者が、図と文章が矛盾しないことを確認する。
 
-| generic_advice_id | 対象 |
-| --- | --- |
-| `generic_consonant` | 子音全般。 |
-| `generic_vowel` | 母音全般。 |
-| `generic_final_consonant` | 語末子音の脱落。 |
-| `generic_cluster` | 子音連結。 |
-| `generic_unknown` | 分類不能。 |
+## 10. レビューと有効化
 
-## 直し方ページ構成
+公開可能な課題は、次をすべて満たす。
 
-各直し方ページは次を持つ。
+1. 英文・語義・読み方に不必要な曖昧さがない。
+2. normalized text、IPA、焦点位置が確認済み。
+3. 焦点音以外が目的に対して過度に難しくない。
+4. 標準・スロー音声が自然で対象音を保つ。
+5. 助言が1行動に絞られ、図解と一致する。
+6. 発音指導または音声学の知識があるレビュー担当者が承認する。
+7. 複数話者・複数端末でAzureが対象音を返す。
+8. 良好音声と改善候補音声を技術失敗と区別できる。
+9. 発見→コーチ→再録音が実機で完走する。
+10. content/advice/audio/diagram versionの組み合わせが固定される。
 
-| 項目 | 内容 |
-| --- | --- |
-| `advice_id` | 安定ID。 |
-| `confusion_pair_id` | 対応する混同ペア。汎用の場合はnull。 |
-| `native_language` | `ja`。 |
-| `target_accent` | `US`。 |
-| `title` | 画面タイトル。 |
-| `short_tip` | 1〜2行の助言。 |
-| `comparison_text` | 2音の違い。 |
-| `coach_example_text` | お手本再生用テキスト。 |
-| `asset_id` | 図解アセットID。 |
-| `is_template` | テンプレ助言か。 |
+Azureの正式な話者数・端末数・成功率基準はTBD。未検証の課題を`active`にしない。
 
-## 助言方針
+## 11. 現在コンテンツとの境界
 
-### テンプレ優先
+第1段階調査では、リポジトリSeedに候補428件、レビュー済みかつactiveな課題6件、active文1件、active助言0件、placeholder図解15件が確認された。Hosted Supabaseの状態は未確認である。
 
-MVPの混同ペアは、テンプレ助言を優先する。OpenAI APIを毎回呼ばない。
+既存候補数は公開最低ライン達成を意味しない。新仕様の役割、焦点群、音声、助言、図解、レビューを満たした資産だけを約104課題へ数える。第3段階ではSeedや資産を変更しない。
 
-### OpenAI利用条件
+## 12. 多地域・多言語
 
-OpenAI APIは次の場合のみ使う。
+次を分離して管理する。
 
-- 混同ペアがテンプレ未対応。
-- 汎用助言をユーザーの文脈に合わせて短く整形する必要がある。
-- サーバー側でキャッシュミスした。
+- `target_language`
+- `assessment_locale`
+- `target_accent`
+- `coaching_locale`
+- `content_version`
+- `advice_version`
+- `market_tags`
 
-OpenAIの出力は、根拠のない説明を追加しないように、検証済みの直し方だけを入力して整形させる。
+`coaching_locale=ja-JP`は説明表示に使い、Azureスコア補正には使わない。別市場では同じ管理課題を再利用できても、助言翻訳、音声、Azure capabilities、文化的な実用文を個別にレビューする。
 
-### キャッシュ
+## 13. 禁止事項
 
-キャッシュキーは少なくとも次を含める。
-
-- `native_language`。
-- `target_accent`。
-- `confusion_pair_id` または `generic_advice_id`。
-- `expected_phoneme_id`。
-- `observed_phoneme_id`。
-
-## 静的アセット
-
-### 方針
-
-- 実行時にAI画像生成しない。
-- 事前生成または手作りの静的画像を使う。
-- 口、舌、歯、唇の位置を示す。
-- アセットは音素または混同ペアに紐付ける。
-
-### 配置案
-
-実装時の配置例:
-
-```text
-assets/pronunciation/
-  phonemes/
-    r.png
-    l.png
-    theta.png
-    v.png
-  pairs/
-    r_to_l.png
-    theta_to_s.png
-    v_to_b.png
-  generic/
-    final_consonant.png
-    cluster.png
-```
-
-実際の配置は実装時に決めてよいが、`asset_id` とファイルパスの対応表はDBまたはアプリ内定数で管理する。
-
-## Piper音声
-
-### 生成
-
-Piperはサーバー側で都度生成する。
-
-### キャッシュキー
-
-```text
-tts:{accent}:{speed}:{sha256(normalized_text)}
-```
-
-### speed
-
-MVPの速度:
-
-- `normal`。
-- `slow`。
-
-### 保存先
-
-Supabase Storage等にキャッシュする。お手本音声はサーバー生成物であり、ユーザー音声ではない。
-
-## 自由入力コンテンツ
-
-自由入力はPro限定であり、パックコンテンツではない。
-
-保存対象:
-
-- raw text。
-- normalized text。
-- IPA変換結果。
-- OOV語。
-- 変換確信度。
-- 判定結果。
-
-出題パックや `phoneme_state` に自動反映しない。将来の需要マイニング用に貯めるだけである。
-
-## 禁止事項
-
-- 実行時のAI画像生成をMVPに入れない。
-- 自由入力を自動でデイリーパック化しない。
-- 未レビューのAI生成パックを本番出題対象にしない。
-- 音素IDを実装途中で変更しない。
-- Azure返却値をそのままDB主キーにしない。
-- シャドーイング用コンテンツを作らない。
-
-## フェーズ4セルフレビュー
-
-- マスター設計書・既作成ドキュメントとの矛盾: 約40音素、子音連結グループ、初期シード、混同ペア20〜30、静的アセット、テンプレ優先を反映済み。
-- Codexが実装に着手できる具体性: 音素ID、cluster_id、practice_item要件、confusion_pair_id、asset配置案を明記済み。
-- 用語・命名の一貫性: `theta`、`dh`、`r`、`l`、`v` などのIDを `04_CORE_LOGIC.md` のバッジ条件と整合させた。
+- 自由入力を管理課題へ自動変換しない。
+- 未レビューAI生成文を公開しない。
+- 実行時OpenAI、Piper、Pythonを教材不足のフォールバックにしない。
+- 特定母語の難易度を全利用者の採点へ適用しない。
+- Azureで不安定な課題を数合わせで有効化しない。
+- 具体的な英文やレビュー結果を未確認のまま確定しない。

@@ -1,151 +1,156 @@
-# Phase 13: 統合/ステージング準備
+# Phase 13: 新MVP統合・ステージング準備
 
-## 運用ルール
+> 文書状態: 現役の受け入れ文書
+> 上位仕様: [Otokagami仕様書体系](../specs/00_README.md)
+> 注意: 本文は将来の統合確認範囲を定義する。第3段階で実装・外部接続を行う指示ではない。
 
-- ユーザーが「Phase 13 の指示書をもとに作業してください」と指示したら、この指示書を根拠に開発を開始する。
-- この指示書に書かれた内容がすべて完了したら、Phase 13 は完了とし、作業を終了する。勝手に本番環境作成やリリースへ進まない。
-- 本番環境作成、本番リリース、App Store提出はユーザーの明示承認後に別作業として行う。
-- ステージング環境での主要E2E確認は、このPhaseの完了条件に含める。
-- 実際のAPIキー、トークン、秘密鍵、service role keyをチャットやコミットに出さない。
+## 1. 目的
 
-## ゴール
+新しいOtokagami MVPが、ローカルと許可済みステージング環境で一貫して動き、「App Store申請前のアプリ完成」と呼べる技術状態かを検証する。
 
-MVPをTestFlight配布前に確認できる品質状態へ持っていく。Phase 13 完了時点では、ローカル受け入れ基準、外部API実接続、RevenueCat sandbox、セキュリティ、音声非保存、ステージング環境での主要E2Eが確認済みで、残課題が明示されている。
+Phase 01〜12の旧実装完了や、旧MVPのTestFlight提出記録は、新MVPの完成証拠へ自動的に引き継がない。
 
-## 前提条件
+## 2. 前提
 
-- Phase 1〜12が完了している。
-- ローカルでMVP画面一式が動く。
-- ユーザーがステージング環境作成に必要なアカウント/プロジェクトの準備を承認している。
-- 参照設計書:
-  - `docs/specs/02_MVP_SCOPE.md`
-  - `docs/specs/07_API_SPEC.md`
-  - `docs/specs/08_ARCHITECTURE.md`
-  - `docs/specs/09_PRIVACY_BILLING_SECURITY.md`
-  - `docs/specs/10_TEST_PLAN.md`
+- [製品目標](../specs/01_PRODUCT_GOAL.md)から[テスト計画](../specs/10_TEST_PLAN.md)までが最新である。
+- 第4段階以降で新仕様への移行実装が完了している。
+- コード、DB、コンテンツ、外部環境の差分が明示されている。
+- 有料API、Hosted DB、ステージング、RevenueCat sandboxの実行は対象と費用を含む明示承認がある。
+- Production、App Store申請、一般公開は別承認である。
 
-## スコープ
+## 3. 完成対象
 
 含む:
 
-- 全テストの整理と実行。
-- Azure実接続確認。
-- Piper TTS確認。
-- OpenAI助言フォールバック確認。
-- RevenueCat sandbox購入/復元確認。
-- Supabase RLS/Storage/音声非保存確認。
-- ステージング候補構成でのデプロイ準備。
-- ステージング環境での主要E2E確認。
-- TestFlight前チェックリスト作成。
+- 1日1焦点音、通常5課題、短縮、任意追加2課題。
+- 対象1音の主要結果、静的コーチ、guided retry、before／after。
+- 発見、即時改善、維持、転移、定着、メンテナンス。
+- Program Day、Calendar Date、Review Due Date。
+- 7 active learning days、Day 7レポート、Day 8前Paywall。
+- 1・3・7・14日復習と休止後の復帰。
+- 約104管理課題と約208音声、助言21件以上、正式図解8件以上。
+- Azure直接ストリーミング、主要結果と保存の分離、idempotency。
+- RevenueCat sandbox購入・復元・webhook。
+- 音声非保存、端末30日保持、書き出し・削除、秘密・RLS。
 
 含まない:
 
-- 本番環境の作成。
-- App Store提出。
-- 本番課金商品の確定/提出。
-- Phase 2機能の実装。
+- 自由入力、AI会話、音素表練習、別建て苦手ドリル。
+- 実行時OpenAI/Piper/Python中心経路。
+- レベル、バッジ、称号、全41音ヒートマップ、総合点グラフ。
+- オンデバイス判定。
+- App Store Connect申請、一般公開、Productionデプロイ。
 
-## 作業タスクリスト
+## 4. 統合確認
 
-1. ローカル総合テストを実行
-   - ルートのlint/testを実行する。
-   - DB/RLSテストを実行する。
-   - API統合テストを実行する。
-   - モバイルE2Eまたは手動E2Eを実行する。
-   - 失敗があれば、このPhaseの範囲で修正する。
+### 4.1 セッション
 
-2. 外部API実接続を確認
-   - `.env` の必要変数がローカルで埋まっていることを確認する。値はチャットに書かない。
-   - Azure Speech:
-     - 短い音声で発音評価が成功する。
-     - 音声本体を保存していない。
-   - Piper:
-     - normal/slowのTTS生成とキャッシュが成功する。
-   - OpenAI:
-     - 未知ケース助言整形のフォールバックが動く。
-     - 頻出混同ペアではテンプレ助言を優先し、毎回OpenAIを呼ばない。
-   - RevenueCat:
-     - sandbox購入。
-     - 購入復元。
-     - webhookによる `subscriptions` 更新。
+- 通常5つの課題役割が一貫して生成・表示される。
+- 良好日の短縮が約3課題で成立する。
+- 任意追加2課題なしでProgram Dayが完了する。
+- 未完了セッションを日付変更後も同じDay・位置から再開する。
+- 1 Calendar Dateで2 Program Daysを完了できない。
+- 期限超過復習を最大1件だけ統合する。
 
-3. セキュリティ確認を実行
-   - `.env`、`.env.local`、`.env.*` がGit管理されていない。
-   - `.env.example` が最新でコミット対象。
-   - Expoバンドルにサーバー専用キーが含まれていない。
-   - Azure/OpenAI/Supabase service role/RevenueCat secret/Python service API keyがExpo側にない。
-   - APIレスポンス、error_logs、アプリログに秘密値が出ていない。
-   - RevenueCat webhookが認証されている。
-   - Python推論サービスが内部APIキーで保護されている。
+### 4.2 判定・再挑戦
 
-4. 音声非保存を確認
-   - ユーザー音声がサーバーの永続ストレージに残っていない。
-   - Supabase Storageにユーザー音声が保存されていない。
-   - DBにユーザー音声ファイルパスや音声base64が保存されていない。
-   - お手本音声だけがTTSキャッシュとして保存されている。
+- Azure短期トークンとPCM直接streamが動く。
+- 技術的無効録音を学習成果へ入れない。
+- 対象1音の主要結果を長期集計より先に表示する。
+- コーチは事前生成資産から即時表示する。
+- guided retryとbefore／afterを結ぶ。
+- 同日再録音がdurable進捗を水増ししない。
+- 保存失敗後、録音なしで同じclient attemptを再送する。
 
-5. データ管理を確認
-   - 学習データ削除で対象テーブルのデータが削除される。
-   - 端末ローカル録音も削除される。
-   - 無料期間起点と購読状態は削除されない。
-   - JSON書き出しに音声ファイルや秘密情報が含まれない。
+### 4.3 日付・学習状態
 
-6. ステージング環境を準備
-   - 本番ではなくステージングとして準備する。
-   - 候補構成:
-     - Next.js API: Vercel等。
-     - Python推論サービス: Fly.ioまたはRender等。
-     - Supabase: hosted staging project。
-   - ステージング環境変数を設定する。
-   - 本番キーとステージングキーを混同しない。
-   - ユーザーの承認なしに本番環境作成へ進まない。
+- 休止でProgram Dayは進まず、Review Due Dateは進む。
+- overdueを失敗・自動消化にしない。
+- 別日の無補助証拠だけをheld候補にする。
+- 別課題の無補助証拠だけをtransferred候補にする。
+- 7日期限前にstableを捏造しない。
 
-7. ステージングE2Eを実行
-   - TestFlight配布前提の確認として、ステージングAPI、ステージングPython推論サービス、ステージングSupabaseで主要E2Eを通す。
-   - 必須E2E:
-     - 新規匿名ユーザー開始。
-     - デイリー7問完走。
-     - 2段IPA表示。
-     - 詳細から直し方へ遷移。
-     - 8日目課金ウォール。
-     - RevenueCat sandbox Pro有効化。
-     - 自由入力同意と判定。
-     - 自由入力が進捗に混ざらない。
-     - 学習データ削除。
-     - JSON書き出し。
+### 4.4 無料体験・課金
 
-8. TestFlight前チェックリストを作成
-   - 実行したテストと結果を記録する。
-   - 未解決の残課題を分類する。
-     - TestFlight前ブロッカー。
-     - TestFlight後でもよい改善。
-     - MVP対象外。
-   - 追加でユーザー承認が必要な項目を明記する。
+- 最初の有効判定でtrialを開始する。
+- Day 1〜Day 7をactive learning daysとして数える。
+- Day 7レポート後、8回目の学習日前にPaywallを出す。
+- 自動課金・Apple Introductory Offerを前提にしない。
+- 月額/年額のRevenueCat商品を取得し、購入・復元・webhookを確認する。
+- 未購読でも過去閲覧、復元、書き出し・削除を許可する。
 
-## 動作確認手順
+## 5. コンテンツ準備
 
-- `docs/specs/10_TEST_PLAN.md` のリリース前チェックリストを順に確認する。
-- ローカルとステージングの両方で主要E2Eを実行する。
-- ステージングでデイリー完走、課金ウォール、自由入力、データ削除が成功することを確認する。
-- 秘密値、音声保存、RLS、RevenueCat webhook、Python内部APIキーのセキュリティ確認を行う。
-- 結果をドキュメントまたはPR本文にまとめる。
+- 8焦点群。
+- 各12課題、計96。
+- 診断候補8、合計約104。
+- standard/slow約208音声。
+- 主/代替コツ16、汎用5、助言21以上。
+- 正式図解8以上。
+- 発音指導者レビューとAzure実機検証。
+- active versionの参照整合性。
 
-## 完了条件チェックリスト
+候補数やSeed件数ではなく、レビュー済み・実機検証済みのactive資産だけを数える。
 
-- [ ] ローカルのlint/test/DB/API/E2E確認が完了している。
-- [ ] Azure実接続確認が完了している。
-- [ ] Piper TTS生成とキャッシュ確認が完了している。
-- [ ] RevenueCat sandbox購入と復元が確認できている。
-- [ ] RevenueCat webhookがステージングで購読状態を更新できる。
-- [ ] Expo側にサーバー専用キーが含まれていない。
-- [ ] ユーザー音声がサーバー保存されていない。
-- [ ] データ削除とJSON書き出しが動く。
-- [ ] ステージング環境で主要E2Eが通っている。
-- [ ] TestFlight前ブロッカーと残課題が明示されている。
-- [ ] 本番環境作成やApp Store提出へ勝手に進んでいない。
+## 6. 品質確認
 
-## セルフレビュー観点
+### 自動
 
-- `docs/specs/10_TEST_PLAN.md` の受け入れ基準とリリース前チェックリストを満たしている。
-- `docs/specs/09_PRIVACY_BILLING_SECURITY.md` のシークレット、音声非保存、課金、削除方針と矛盾していない。
-- Phase 13だけでTestFlight前のステージング確認まで完結できる。
+- workspacesのlint/test/build。
+- CoreのProgram Day、attempt、evidence、review、idempotency。
+- API認証、access、assessment、completion、report、billing、export/delete。
+- DB migration、Seed、RLS、protected write拒否。
+- Mobile状態機械、offline、保存再送、ローカル音声削除。
+- 文書リンク・固定値の整合。
+
+### 実機
+
+- iPhone実機の録音、Azure final result、主要結果。
+- マイク・Bluetooth・route変更、background/foreground。
+- 初期8焦点群のAzure挙動。
+- 主要結果と次問までの区間レイテンシ。
+- 通常5課題とDay 1の完了時間。
+- 端末before／afterの保持・欠損・削除。
+- RevenueCat sandbox購入・復元。
+
+P95 3秒、成功率等は現時点で`実機検証目標`。正式な合格値はTBD。
+
+## 7. セキュリティ・プライバシー
+
+- Expo bundleにserver secretsがない。
+- Azure keyはサーバーだけ、クライアントは短期tokenだけ。
+- 自社API、DB、Storage、ログにユーザー音声がない。
+- before／afterは端末で最大30暦日、14日完了時の早期削除と学習削除が動く。
+- subscription、trial、durable evidenceをclientだけで更新できない。
+- RevenueCat webhookとserver APIが認証される。
+- 他ユーザーのread/writeを拒否する。
+- exportに音声・秘密がない。
+- 学習削除でtrialを再付与しない。
+
+## 8. ステージング
+
+ステージングを使う場合も、作成・更新・有料利用は別承認とする。
+
+- 環境をProductionと明確に分ける。
+- mobile、API、Supabase、RevenueCat sandboxの組み合わせを記録する。
+- 旧Python/OpenAI/Piper環境が存在しても、新MVP中心経路で呼ばれないことを確認する。
+- Hosted Supabaseの現状は接続確認まで未確認とする。
+- Vercel Previewが自動作成されても、Production承認にはならない。
+
+## 9. 完了条件
+
+- [ ] 新MVPの自動テストがすべて通る。
+- [ ] 1日1焦点音・5課題・短縮・任意追加が統合確認済み。
+- [ ] 主要結果・コーチ・guided retry・before/afterが実機確認済み。
+- [ ] Program DayとReview Due Dateの休止シナリオが確認済み。
+- [ ] 同日再録音と再送によるdurable進捗水増しがない。
+- [ ] 約104課題と資産がレビュー済みである。
+- [ ] Azure実機品質・レイテンシの証拠がある。
+- [ ] RevenueCat sandbox購入・復元・webhookが確認済み。
+- [ ] 音声非保存、端末保持、export/delete、RLS、秘密境界が確認済み。
+- [ ] 未達の性能値をPASSと記録していない。
+- [ ] App Store申請、一般公開、Productionへ進んでいない。
+
+## 10. 証拠の記録
+
+結果は[Phase 13準備状況](PHASE_13_TESTFLIGHT_READINESS_CHECKLIST.md)へ、`確認済み`、`旧実装のみ確認済み`、`未実装`、`未確認`、`blocked`を分けて記録する。秘密、音声、個人データ、実キーは記録しない。
