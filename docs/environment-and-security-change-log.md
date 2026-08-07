@@ -54,7 +54,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | ESC-001 | 外部公開・アクセス制御 | Vercel ステージングのログイン保護を解除 | `otokagami-api-staging` | 有効・要見直し | 高 | テスト完了後に保護を再有効化するか判断 | 2026-08-07 |
 | ESC-002 | 外部デプロイ | Vercel ステージング API を公開デプロイ | `otokagami-api-staging` | 有効・要見直し | 中 | 公開要否と接続先分離を点検 | 2026-08-07 |
 | ESC-003 | 認証・ローカル設定 | Vercel CLI のプロジェクト連携と環境変数取得 | ローカル作業ディレクトリ / Vercel | 有効・要見直し | 中 | `.vercel` と `.env.local` の追跡除外・不要時削除を確認 | 2026-08-07 |
-| ESC-004 | 配布・外部連携 | EAS Update の staging チャネルと TestFlight ステージング配布 | Expo / App Store Connect | 有効・必要 | 中 | 0.1.1 (8) の接続先を実機または保全済み配布物で確認 | 2026-08-07 |
+| ESC-004 | 配布・外部連携 | EAS Update の staging チャネルと TestFlight ステージング配布 | Expo / App Store Connect | 有効・必要 | 中 | 次回 staging buildでも接続先を再確認 | 2026-08-08 |
 | ESC-005 | OS・常駐ドライバ | BlackHole 仮想オーディオドライバを導入 | macOS | 有効・要見直し | 中 | 自動テスト用途が不要になれば削除可否を判断 | 2026-07-12 |
 | ESC-006 | OS・シミュレーター設定 | 仮想オーディオを既定入出力・Simulator マイク入力に設定 | macOS / iOS Simulator | 一時的 | 中 | 音声テスト終了後に既定入力・出力を復元 | 2026-07-12 |
 | ESC-007 | 開発サーバー | Metro を LAN から到達可能な 8081 番ポートで待受 | ローカル PC / iOS Simulator | 一時的 | 低 | 開発終了時に停止し、不要な待受がないか確認 | 2026-07-12 |
@@ -171,11 +171,11 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **実施日時**：不明（このセッション内で staging への EAS Update 公開と TestFlight 検証を確認）
 - **実施者**：ユーザーおよび Codex
 - **実施状況**：実施済み
-- **現在の状態**：Expo DashboardではEAS cloud build 0.1.0 (1) が完了済みで、`staging` profile、`preview` environment、`staging` channel、runtime 0.1.0、source commit `afe4717`として確認できる。App Store Connectでは内部テストグループ`Team (Expo)`に0.1.0 (1)、0.1.1 (8)、0.1.1 (9)があり、いずれも`Ready to Submit`かつ期限内だった。0.1.1の外部テストグループは確認されなかった。ユーザーが0.1.1 (9)を実機起動した直後、`otokagami-staging`のAuth logだけに新規行6件、`Otokagami`には0件という差分を確認し、Build 9の実接続先を`otokagami-staging`と確定した。
+- **現在の状態**：Expo DashboardではEAS cloud build 0.1.0 (1) が完了済みで、`staging` profile、`preview` environment、`staging` channel、runtime 0.1.0、source commit `afe4717`として確認できる。App Store Connectでは内部テストグループ`Team (Expo)`に0.1.0 (1)、0.1.1 (8)、0.1.1 (9)があり、いずれも`Ready to Submit`かつ期限内だった。0.1.1の外部テストグループは確認されなかった。ユーザーが0.1.1 (9)を実機起動した直後は`otokagami-staging`に新規Auth log 6件、`Otokagami`に0件、0.1.1 (8)の起動直後は同2件対0件という差分を確認し、Build 8と9の実接続先をいずれも`otokagami-staging`と確定した。
 - **ステータス**：有効・必要
 - **変更内容**：EAS Update プロジェクトを接続し、`staging` チャネルを TestFlight 用ビルドに設定した。0.1.1 (8) の署名済みIPAを提出し、再提出用のApp Store ConnectアプリIDを設定した。
 - **実施理由**：非ネイティブ変更を TestFlight 検証端末へ配信するため。
-- **確認できた根拠**：`apps/mobile/app.json`、`apps/mobile/eas.json`、`docs/phases/PHASE_14_REMOTE_IOS_STAGING.md`、Expo Dashboard、App Store Connect。ユーザー所有の0.1.0 (1)配布物を新しい一時ディレクトリへ保存し、署名変更・実行・再配布をせずに埋め込み設定を確認した結果、Bundle IDは既存の`com.yutahemmi.otokagami`、公開Supabase接続先は`otokagami-staging`、サーバー専用変数名とservice-role token literalの検出は0件だった。0.1.1 (9)はユーザー提供の実機起動画面と両projectのread-only log差分で接続先を確認した。0.1.1 (8)は管理画面から配布物を取得できず、ローカルにも保全済み配布物が見つからないため、接続先は未確認。
+- **確認できた根拠**：`apps/mobile/app.json`、`apps/mobile/eas.json`、`docs/phases/PHASE_14_REMOTE_IOS_STAGING.md`、Expo Dashboard、App Store Connect。ユーザー所有の0.1.0 (1)配布物を新しい一時ディレクトリへ保存し、署名変更・実行・再配布をせずに埋め込み設定を確認した結果、Bundle IDは既存の`com.yutahemmi.otokagami`、公開Supabase接続先は`otokagami-staging`、サーバー専用変数名とservice-role token literalの検出は0件だった。0.1.1 (8)/(9)はユーザーの実機起動と両projectのread-only Auth log差分で接続先を確認した。
 - **関連ファイル・設定場所**：`apps/mobile/app.json`、`apps/mobile/eas.json`、Expo Dashboard、App Store Connect。
 - **付与した権限・公開範囲**：Expo アカウントの当該プロジェクト操作権限、TestFlight テスターへのステージングアプリ配布。
 - **使用している認証情報の名称**：Expo/EAS ログイン、Apple Developer/App Store Connect 認証。
@@ -186,8 +186,8 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **確認方法**：Expo Dashboardでprofile、environment、channel、runtimeVersion、source commitを確認し、App Store Connectで内部・外部テスター、build状態、有効期限を確認する。接続先は履歴文書から推測せず、保全済み配布物内の公開URLをaliasへ照合するか、対象buildの実行時通信を両Supabase projectのread-only logで相関確認する。
 - **解除・削除・復旧手順**：本台帳では実施しない。承認後に配布対象・チャネル運用を変更し、必要なら新ビルドで設定を置換する。
 - **次回確認日**：次回 staging 更新前
-- **最終確認日**：2026-08-07
-- **対応結果・補足**：解析用配布物は`/private/tmp/otokagami-s601-mobile-jNYFIr`に保持し、IPAは16,322,571 bytes、一時ディレクトリ全体は約75MB。自動削除していない。`EXPO_PUBLIC_*`は公開バンドルに入る前提の値だけを使用し、サーバー専用キーは登録しない。0.1.1 (8)の接続先確認が残る。
+- **最終確認日**：2026-08-08
+- **対応結果・補足**：解析用配布物は`/private/tmp/otokagami-s601-mobile-jNYFIr`に保持し、IPAは16,322,571 bytes、一時ディレクトリ全体は約75MB。自動削除していない。`EXPO_PUBLIC_*`は公開バンドルに入る前提の値だけを使用し、サーバー専用キーは登録しない。S6-01で対象とした現行対応buildの接続先確認は完了した。
 
 ## ESC-005：BlackHole 仮想オーディオドライバの導入
 
@@ -321,7 +321,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
 2. **ESC-002 / ESC-003**：Vercel プロジェクトの公開範囲、環境変数名、ローカル CLI ログインと `.env.local` の保管要否を確認する。
-3. **ESC-004**：0.1.1 (8)を実機起動して両Supabase projectのread-only logと相関させるか、ユーザー保有の配布物を提示して、接続先を確定する。
+3. **ESC-004**：次回 staging buildを追加した際も、配布履歴だけで推測せず、配布物または実機log相関で接続先を再確認する。
 4. **ESC-006**：macOS の既定入力が BlackHole 16ch、Simulator 入力が BlackHole 2ch である不整合を確認し、テスト完了後に内蔵デバイスへ戻す。
 5. **ESC-007**：本日の開発終了時に Metro の LAN 待受を停止するか確認する。
 6. **ESC-011**：S6-01用の停止container 11個、保持volume 2個、関連image、一時ディレクトリ、SQL Editor autosave queryをいつ削除するか判断する。削除はすべて別承認とする。
@@ -339,3 +339,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-07-12 | ESC-001〜ESC-008 | Codex | 初回台帳作成。リポジトリ、現在のセッション、設定ファイルを調査。外部管理画面の現況確認が必要な項目を要確認として登録。 |
 | 2026-08-07 | ESC-011 | Codex | Supabase CLI 2.112.0、local migration/Seed/RLS、停止container 11個、保持volume 2個、Colima稼働、両Hosted projectのread-only inventoryとbackup/PITR未契約を確認。削除・Hosted変更は未実施。 |
 | 2026-08-07 | ESC-001〜ESC-003 | Codex | Vercel APIの公開到達、ReadyなProduction deployment、`otokagami-staging`へのrouting、ローカルVercel CLIが未ログインであることを確認。Sensitive値と秘密は取得・記録していない。 |
+| 2026-08-08 | ESC-004 | Codex | TestFlight 0.1.1 (8)の実機起動直後、`otokagami-staging`に新規Auth log 2件、`Otokagami`に0件を確認。Build 1・8・9の接続先をすべて`otokagami-staging`と確定した。 |
