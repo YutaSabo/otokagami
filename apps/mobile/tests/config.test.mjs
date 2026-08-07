@@ -68,7 +68,7 @@ test("mobile app uses Phase 10 public environment variables only", async () => {
   }
 });
 
-test("mobile foundation includes anonymous auth, bootstrap, tabs, and paywall", async () => {
+test("mobile foundation includes anonymous auth, bootstrap, current tabs, and retained legacy progress source", async () => {
   const source = await readFile(new URL("../App.tsx", import.meta.url), "utf8");
 
   assert.match(source, /signInAnonymously/);
@@ -152,7 +152,7 @@ test("pronunciation UI exposes loading, error, retry, simple result, and detail 
   assert.match(source, /epoch !== assessmentEpochRef\.current/);
 });
 
-test("Phase 12 mobile surfaces progress, practice variants, free input, reminders, and data management", async () => {
+test("Phase 12 compatibility code retains progress, practice variants, free input, reminders, and data management", async () => {
   const source = await readFile(new URL("../App.tsx", import.meta.url), "utf8");
 
   for (const apiPath of [

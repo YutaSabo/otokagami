@@ -46,6 +46,11 @@ import {
   PronunciationSessionTracker,
   shouldRetrySavedAzureResult
 } from "./lib/pronunciation-session.mjs";
+import {
+  LEGACY_UI_DISABLED_MESSAGE,
+  LEGACY_UI_FEATURES,
+  legacyUiGate
+} from "./lib/legacy-ui-gate.mjs";
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -579,6 +584,7 @@ async function fetchDailySession(session: Session) {
 }
 
 async function fetchPracticeSession(session: Session, mode: "weak_drill" | "phoneme_select", phonemeId?: string) {
+  legacyUiGate.assertPracticeModeAllowed(mode);
   const data = await apiJson<{
     mode: PracticeMode;
     items: DailySessionItem[];
@@ -609,6 +615,7 @@ async function fetchPracticeSession(session: Session, mode: "weak_drill" | "phon
 }
 
 async function fetchProgress(session: Session) {
+  legacyUiGate.assertFeatureAllowed(LEGACY_UI_FEATURES.progress);
   return apiJson<ProgressData>({
     session,
     path: "/api/progress",
@@ -669,6 +676,7 @@ async function assessDailyItem({
   clientTiming: Record<string, number | null>;
   onPerformance?: (values: AssessmentPerformance) => void;
 }) {
+  legacyUiGate.assertPracticeModeAllowed(practiceMode);
   const startedAt = performance.now();
   const body = {
     azure_result: azureResult,
@@ -726,6 +734,7 @@ async function assessDailyItem({
 }
 
 async function saveFreeTextConsent(session: Session) {
+  legacyUiGate.assertFeatureAllowed(LEGACY_UI_FEATURES.freeInput);
   return apiJson<Pick<Profile, "free_text_consent_version" | "free_text_consented_at">>({
     session,
     path: "/api/free-text-consent",
@@ -749,6 +758,7 @@ async function assessFreeInput({
   clientTiming: Record<string, number | null>;
   onPerformance?: (values: AssessmentPerformance) => void;
 }) {
+  legacyUiGate.assertFeatureAllowed(LEGACY_UI_FEATURES.freeInput);
   const startedAt = performance.now();
   const body = {
     azure_result: azureResult,
@@ -1075,6 +1085,7 @@ export default function App() {
   }, [bootstrapState, initializeRevenueCat, loadApp]);
 
   const loadProgress = useCallback(async () => {
+    if (!legacyUiGate.allowsFeature(LEGACY_UI_FEATURES.progress)) return;
     if (bootstrapState.status !== "ready") return;
     setProgressLoading(true);
     setProgressError(null);
@@ -1134,6 +1145,10 @@ export default function App() {
 
   const startPracticeSession = useCallback(
     async (mode: "weak_drill" | "phoneme_select", phonemeId?: string) => {
+      if (!legacyUiGate.allowsPracticeMode(mode)) {
+        setPracticeNotice(LEGACY_UI_DISABLED_MESSAGE);
+        return;
+      }
       if (bootstrapState.status !== "ready") return;
       setDailyStep("loading");
       setDailyError(null);
@@ -1158,6 +1173,10 @@ export default function App() {
   const requestPracticeStart = useCallback(
     async (mode: PracticeMode) => {
       setPracticeNotice(null);
+      if (!legacyUiGate.allowsPracticeMode(mode)) {
+        setPracticeNotice(LEGACY_UI_DISABLED_MESSAGE);
+        return;
+      }
       const online = await ensureOnline();
       setIsOnline(online);
       if (!online) {
@@ -1386,7 +1405,10 @@ export default function App() {
   );
 
   const changeTab = useCallback(
-    (tab: TabKey) => confirmDiscardRecording(() => setActiveTab(tab)),
+    (tab: TabKey) => {
+      if (!legacyUiGate.allowsTab(tab)) return;
+      confirmDiscardRecording(() => setActiveTab(tab));
+    },
     [confirmDiscardRecording]
   );
 
@@ -1576,7 +1598,7 @@ export default function App() {
       setDailySession({ ...dailySession, completed_count: dailySession.items.length, status: "completed" });
       if (activePracticeMode === "daily") {
         setActiveTab("home");
-        void loadProgress();
+        if (legacyUiGate.allowsFeature(LEGACY_UI_FEATURES.progress)) void loadProgress();
       }
       return;
     }
@@ -1624,6 +1646,11 @@ export default function App() {
   );
 
   const acceptFreeTextConsent = useCallback(async () => {
+    if (!legacyUiGate.allowsFeature(LEGACY_UI_FEATURES.freeInput)) {
+      setFreeInputConsentVisible(false);
+      setFreeInputError(LEGACY_UI_DISABLED_MESSAGE);
+      return;
+    }
     if (bootstrapState.status !== "ready") return;
     setFreeInputError(null);
     try {
@@ -1644,6 +1671,10 @@ export default function App() {
   }, [bootstrapState]);
 
   const startFreeInputRecording = useCallback(async () => {
+    if (!legacyUiGate.allowsPracticeMode("free_input")) {
+      setFreeInputError(LEGACY_UI_DISABLED_MESSAGE);
+      return;
+    }
     if (!freeText.trim()) {
       setFreeInputError("判定する英文を入力してください。");
       return;
@@ -1655,6 +1686,10 @@ export default function App() {
   }, [freeText, startRecording]);
 
   const stopAndAssessFreeInput = useCallback(async () => {
+    if (!legacyUiGate.allowsPracticeMode("free_input")) {
+      setFreeInputError(LEGACY_UI_DISABLED_MESSAGE);
+      return;
+    }
     if (bootstrapState.status !== "ready") return;
     if (assessmentActionInFlightRef.current || recordingState !== "recording") return;
     assessmentActionInFlightRef.current = true;
@@ -1718,6 +1753,10 @@ export default function App() {
   }, [bootstrapState, freeText, recordingState]);
 
   const retryFreeInputAssessment = useCallback(async () => {
+    if (!legacyUiGate.allowsPracticeMode("free_input")) {
+      setFreeInputError(LEGACY_UI_DISABLED_MESSAGE);
+      return;
+    }
     const pendingResult = freeInputPendingResult;
     if (bootstrapState.status !== "ready" || pendingResult === null || !shouldRetrySavedAzureResult(pendingResult)) {
       await startFreeInputRecording();
@@ -1805,7 +1844,9 @@ export default function App() {
     if (bootstrapState.status !== "ready") return;
     Alert.alert(
       "学習データを削除しますか",
-      "サーバー上の進捗、ストリーク、レベル、バッジ、称号、自由入力ログと、端末ローカル録音を削除します。無料期間の起点と購読状態は削除しません。",
+      legacyUiGate.legacyUiEnabled
+        ? "サーバー上の進捗、ストリーク、レベル、バッジ、称号、自由入力ログと、端末ローカル録音を削除します。無料期間の起点と購読状態は削除しません。"
+        : "サーバー上の学習履歴と端末ローカル録音を削除します。無料期間の起点と購読状態は削除しません。",
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -1875,13 +1916,14 @@ export default function App() {
             <HomeScreen
               access={access}
               completedToday={progress.completedToday}
+              completionAction={legacyUiGate.homeCompletionAction}
               currentStreak={progress.currentStreak}
               dailyTarget={progress.dailyTarget}
-              onProgress={() => setActiveTab("progress")}
+              onProgress={() => changeTab("progress")}
               onStart={() => void requestPracticeStart("daily")}
             />
           ) : null}
-          {activeTab === "progress" ? (
+          {activeTab === "progress" && legacyUiGate.allowsTab("progress") ? (
             <ProgressScreen
               data={progressData}
               loading={progressLoading}
@@ -1893,7 +1935,7 @@ export default function App() {
             />
           ) : null}
           {activeTab === "practice" ? (
-            freeInputActive ? (
+            legacyUiGate.allowsPracticeMode("free_input") && freeInputActive ? (
               <FreeInputScreen
                 consentVisible={freeInputConsentVisible}
                 error={freeInputError}
@@ -1914,9 +1956,12 @@ export default function App() {
             ) : dailyStep === "idle" ? (
               <PracticeScreen
                 access={access}
+                modes={legacyUiGate.practiceModes}
                 notice={practiceNotice ?? dailyError}
                 phonemes={progressData?.phoneme_heatmap ?? []}
-                phonemePickerVisible={phonemePickerVisible}
+                phonemePickerVisible={
+                  legacyUiGate.allowsPracticeMode("phoneme_select") && phonemePickerVisible
+                }
                 onClosePhonemePicker={() => setPhonemePickerVisible(false)}
                 onPickPhoneme={(phonemeId) => {
                   setPhonemePickerVisible(false);
@@ -1992,7 +2037,7 @@ export default function App() {
             />
           ) : null}
         </ScrollView>
-        <BottomTabs activeTab={activeTab} onChange={changeTab} />
+        <BottomTabs activeTab={activeTab} onChange={changeTab} tabs={legacyUiGate.tabs} />
       </View>
       <PaywallModal
         visible={paywallVisible}
@@ -2051,7 +2096,9 @@ function OnboardingScreen({
     },
     {
       title: "7日間無料",
-      body: "8日目以降の練習にはPro登録が必要です。自由入力はPro限定です。"
+      body: legacyUiGate.legacyUiEnabled
+        ? "8日目以降の練習にはPro登録が必要です。自由入力はPro限定です。"
+        : "8日目以降の練習にはPro登録が必要です。"
     }
   ];
   const page = pages[step];
@@ -2106,6 +2153,7 @@ function StatusBanner({
 function HomeScreen({
   access,
   completedToday,
+  completionAction,
   currentStreak,
   dailyTarget,
   onProgress,
@@ -2113,6 +2161,7 @@ function HomeScreen({
 }: {
   access: AccessState;
   completedToday: number;
+  completionAction: "progress" | null;
   currentStreak: number;
   dailyTarget: number;
   onProgress: () => void;
@@ -2137,10 +2186,12 @@ function HomeScreen({
               ? `無料期間 ${access.trial_day}日目`
               : "Pro登録が必要です"}
         </Text>
-        <PrimaryButton
-          label={isComplete ? "進捗を見る" : "スタート"}
-          onPress={isComplete ? onProgress : onStart}
-        />
+        {!isComplete || completionAction === "progress" ? (
+          <PrimaryButton
+            label={isComplete ? "進捗を見る" : "スタート"}
+            onPress={isComplete ? onProgress : onStart}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -2525,6 +2576,7 @@ function RichPronunciationDetail({ assessment }: { assessment: PronunciationAsse
 
 function PracticeScreen({
   access,
+  modes,
   notice,
   phonemes,
   phonemePickerVisible,
@@ -2533,6 +2585,7 @@ function PracticeScreen({
   onStart
 }: {
   access: AccessState;
+  modes: readonly PracticeMode[];
   notice: string | null;
   phonemes: ProgressData["phoneme_heatmap"];
   phonemePickerVisible: boolean;
@@ -2547,14 +2600,25 @@ function PracticeScreen({
       <Text style={styles.sectionTitle}>練習</Text>
       {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
       <ActionRow title="デイリー練習" caption="7問" onPress={() => onStart("daily")} />
-      <ActionRow title="苦手ドリル" caption="復習" onPress={() => onStart("weak_drill")} />
-      <ActionRow title="音素表から選ぶ" caption="US" onPress={() => onStart("phoneme_select")} />
-      <ActionRow
-        title="自由入力"
-        caption={access.is_pro ? "Pro" : "Pro限定"}
-        onPress={() => onStart("free_input")}
-      />
-      <Modal animationType="slide" transparent visible={phonemePickerVisible} onRequestClose={onClosePhonemePicker}>
+      {modes.includes("weak_drill") ? (
+        <ActionRow title="苦手ドリル" caption="復習" onPress={() => onStart("weak_drill")} />
+      ) : null}
+      {modes.includes("phoneme_select") ? (
+        <ActionRow title="音素表から選ぶ" caption="US" onPress={() => onStart("phoneme_select")} />
+      ) : null}
+      {modes.includes("free_input") ? (
+        <ActionRow
+          title="自由入力"
+          caption={access.is_pro ? "Pro" : "Pro限定"}
+          onPress={() => onStart("free_input")}
+        />
+      ) : null}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={modes.includes("phoneme_select") && phonemePickerVisible}
+        onRequestClose={onClosePhonemePicker}
+      >
         <View style={styles.modalBackdrop}>
           <View style={styles.paywall}>
             <Text style={styles.paywallTitle}>音素表</Text>
@@ -2857,28 +2921,30 @@ function PaywallModal({
 
 function BottomTabs({
   activeTab,
-  onChange
+  onChange,
+  tabs
 }: {
   activeTab: TabKey;
   onChange: (tab: TabKey) => void;
+  tabs: readonly TabKey[];
 }) {
-  const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: "home", label: "ホーム" },
-    { key: "progress", label: "進捗" },
-    { key: "practice", label: "練習" },
-    { key: "settings", label: "設定" }
-  ];
+  const tabLabels: Record<TabKey, string> = {
+    home: "ホーム",
+    progress: "進捗",
+    practice: "練習",
+    settings: "設定"
+  };
 
   return (
     <View style={styles.tabBar}>
       {tabs.map((tab) => (
         <Pressable
-          key={tab.key}
-          onPress={() => onChange(tab.key)}
-          style={[styles.tabItem, activeTab === tab.key ? styles.tabItemActive : null]}
+          key={tab}
+          onPress={() => onChange(tab)}
+          style={[styles.tabItem, activeTab === tab ? styles.tabItemActive : null]}
         >
-          <Text style={[styles.tabLabel, activeTab === tab.key ? styles.tabLabelActive : null]}>
-            {tab.label}
+          <Text style={[styles.tabLabel, activeTab === tab ? styles.tabLabelActive : null]}>
+            {tabLabels[tab]}
           </Text>
         </Pressable>
       ))}
