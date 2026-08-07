@@ -1,348 +1,269 @@
-# Test Plan
+# Otokagami MVPテスト計画
 
-## 目的
+> 文書状態: 現役
+> 原則: 自動テストの成功と実機受け入れを分ける
 
-このテスト計画は、Pronunciation Mirror MVP が仕様どおりに動くことを確認するための受け入れ基準とテスト観点を定義する。
+## 1. テスト方針
 
-後続セッションがPhase別の実行指示書を作る場合、各Phaseの完了条件はこのテスト計画から逆算する。
+- 日付、attempt、状態遷移、idempotencyは単体テストで固定する。
+- API、DB、RLS、購読、削除は統合テストで確認する。
+- 録音、Azure、レイテンシ、マイク、Bluetooth、通知は実機で確認する。
+- 約104課題、約208音声、助言、図解は機械検査と人間レビューを組み合わせる。
+- 旧実装の既存テスト合格だけで新MVP完成としない。
+- Production、App Store申請、一般公開をMVP受け入れに含めない。
 
-## テスト方針
+## 2. 受け入れ区分
 
-- コアロジックはユニットテストで固定する。
-- DB/RLS/集計更新は統合テストで確認する。
-- 録音から判定、詳細、直し方、次へまでの流れはE2Eで確認する。
-- 課金、自由入力、データ削除、シークレット、音声非保存はMVP受け入れ前に必ず確認する。
-- 外部APIは、ローカルではモックを使い、本番相当では実キーを `.env` に入れた環境で検証する。
-
-## 受け入れ基準
-
-MVP完了には次をすべて満たす必要がある。
-
-### プロダクト体験
-
-- 新規ユーザーがメール登録なしで開始できる。
-- 同じ `device_install_id` 由来の再起動/再インストール相当で無料期間が再付与されない。
-- ホームにストリーク、今日の進捗、スタートボタンが表示される。
-- 今日の7個は当日初回生成時に固定される。
-- ホームに7個の一覧が表示されない。
-- 1問ずつ録音、判定、次へができる。
-- 7個完了で完了状態になる。
-
-### 判定
-
-- 録音音声が短期トークンでiPhoneからAzureへ直接ストリーミングされ、自社バックエンドへ送られない。
-- Azure成功時のみ `attempts` に保存される。
-- Azure失敗時は練習回数、ストリーク、習熟度に入らない。
-- 期待IPAと実測IPAが2段で表示される。
-- 音素色が緑80以上、黄60〜79、赤60未満で表示される。
-- ターゲット音素すべて80以上なら問題正解になる。
-- 全音素80以上なら間違いゼロ表示になる。
-
-### 集計
-
-- 同一問題内で複数attemptがある場合、ターゲット音素平均が最高のattemptだけがbestになる。
-- `phoneme_state` はbest attemptでのみ更新される。
-- EWMAが `new = 0.3 * score + 0.7 * old` で更新される。
-- 復習間隔が1、3、7、14日の段階で更新される。
-- `phoneme_snapshots` が日次で保存される。
-- ストリークが `attempts.practiced_date` だけで計算される。
-
-### 進捗
-
-- ヒートマップが `phoneme_state.mastery_ewma` から表示される。
-- 総合習熟度が評価済み音素のEWMA平均になる。
-- 生スコアの日次平均が推移グラフに使われていない。
-- レベルが累計完了問題数から決まる。
-- バッジが条件達成時に一度だけ付与される。
-- 称号が優先順位に従って表示される。
-
-### 自由入力
-
-- Pro未登録では自由入力を開始できない。
-- 7日無料期間中でも自由入力は使えない。
-- 初回利用時に保存同意が表示される。
-- 同意後、`profiles.free_text_consent_version` と `profiles.free_text_consented_at` が保存される。
-- 同意後、`free_attempts` に保存される。
-- 自由入力が `phoneme_state`、ストリーク、ヒートマップ、レベル、バッジ、称号に影響しない。
-- 1日20回程度のソフトキャップが効く。
-
-### 課金
-
-- 初回から7日間は、自由入力以外のMVP機能を利用できる。
-- 8日目以降、Pro未登録なら練習開始前に課金ウォールが出る。
-- Pro登録後、練習できる。
-- 購入復元が動く。
-- Appleイントロオファーを前提にしていない。
-- RevenueCatのPro entitlementでアクセス制御される。
-
-### プライバシー/セキュリティ
-
-- ユーザー音声がサーバーやSupabase Storageに保存されていない。
-- お手本音声だけがTTSキャッシュとして保存される。
-- `.env` と `.env.local` がGit管理されない。
-- `.env.example` がGit管理される。
-- Azure/OpenAI/Supabase service role/RevenueCat secretがExpoアプリに含まれない。
-- RLSによりユーザーは自分のデータだけ読める。
-- RevenueCat webhookが認証される。
-- Python推論サービスが内部APIキーで保護される。
-
-### データ管理
-
-- 学習データ削除で対象テーブルのデータが削除される。
-- 端末ローカル録音も削除される。
-- JSON書き出しができる。
-- JSON書き出しに音声ファイルや秘密情報が含まれない。
-
-## ユニットテスト
-
-### コアロジック
-
-対象:
-
-- 色判定。
-- 正解判定。
-- 間違いゼロ判定。
-- EWMA更新。
-- review_stage更新。
-- best attempt選定。
-- 総合習熟度計算。
-- ストリーク計算。
-- レベル判定。
-- バッジ付与判定。
-- 称号判定。
-
-必須ケース:
-
-| ケース | 期待 |
+| 区分 | 意味 |
 | --- | --- |
-| score 80 | 緑。 |
-| score 79.9 | 黄。 |
-| score 60 | 黄。 |
-| score 59.9 | 赤。 |
-| 初回EWMA | スコアそのまま。 |
-| 2回目EWMA | `0.3 * score + 0.7 * old`。 |
-| ターゲット全80以上 | 正解。 |
-| 非ターゲット赤あり | 正解判定には影響しない。 |
-| 全音素緑 | 間違いゼロ。 |
-| ターゲット平均が最高 | best attempt。 |
+| 自動確認済み | local/CIで再現可能なテストが通る |
+| 実機確認済み | 指定端末・ネットワークで証拠を記録した |
+| 実機検証目標 | まだ合格実績のない候補値 |
+| 未確認 | 外部サービス、Hosted環境、レビューが未確認 |
 
-### 出題
+P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしない。
 
-対象:
+## 3. 製品受け入れ
 
-- 苦手枠。
-- 新規枠。
-- 復習枠。
-- フォールバック。
-- 同日セッション固定。
+### 日次
 
-必須ケース:
+- 1セッションが1焦点音だけを扱う。
+- 通常5課題がanchor、contrast、transfer、sentence/practical、reviewの役割を持つ。
+- 焦点音が良好なら3課題程度へ短縮できる。
+- 完了後の追加2課題は任意で、スキップしても完了状態が変わらない。
+- coached retryは原則1課題。
+- 1課題は最大3有効attempt。
+- 技術的無効録音はattempt上限にもProgram Dayにも入らない。
 
-- 新規音素がある場合、新規枠に入る。
-- `next_review_date <= 今日` が復習枠に入る。
-- `mastery_ewma` が低い音素が苦手枠に入る。
-- 新規不足時、復習で埋まる。
-- 同じ `session_date` では同じdaily_sessionが返る。
+### 1問
 
-## DB/RLSテスト
+- 録音前は課題、焦点音、標準/スロー音声、録音操作に絞る。
+- 主要結果は対象1音と次の1行動を示す。
+- 総合点、Fluency、Completeness、Prosodyを中心表示しない。
+- コーチは1動作、1〜2文、レビュー済み図解を使う。
+- guided retry後にbefore／afterを表示する。
+- 同日成功を定着と表示しない。
+- 保存失敗でも主要結果を表示し、録音をやり直させない。
 
-### ローカルSupabase
+### 継続
 
-Docker経由のローカルSupabaseでテストする。
+- 1・3・7・14日のReview Due Dateを実日付で計算する。
+- 休止中の期限超過を失敗・自動完了にしない。
+- 次回日次セッションへ期限超過復習を最大1件入れる。
+- レポートは発見、即時改善、維持、転移、定着、メンテナンスを区別する。
 
-確認:
+## 4. Program Dayテスト
 
-- migrationが通る。
-- seedが通る。
-- `phonemes` に定義済み音素IDが入る。
-- `practice_items` と `practice_item_targets` が整合する。
-- RLSが有効。
+必須シナリオ:
 
-### RLS
+1. インストール・起動・匿名認証だけではDay 1を開始しない。
+2. 最初の有効判定でtrialが開始する。
+3. 有効判定なしの未完了セッションでProgram Dayが進まない。
+4. Day 1完了後に2 Calendar Dates休んでも次はDay 2。
+5. 未完了Day 2を後日に同じ位置から再開する。
+6. 1 Calendar DateでDay 2完了後、Day 3を完了できない。
+7. timezone変更で同じ実期間に二重完了しない。
+8. Day 7完了後にレポートが表示される。
+9. Day 7後、8回目の学習日となる新規判定前にPaywallが出る。
+10. 未購読でも過去レポート、状態、選択録音、設定、復元、export/delete、規約を読める。
 
-必須ケース:
+## 5. Attempt・状態ロジックの単体テスト
 
-- ユーザーAはユーザーAの `attempts` を読める。
-- ユーザーAはユーザーBの `attempts` を読めない。
-- ユーザーAは自分の `free_attempts` を読める。
-- ユーザーAは他人の `free_attempts` を読めない。
-- 認証ユーザーは `phonemes` を読める。
-- クライアントは `practice_items` を書き換えられない。
-- クライアントは `tts_cache` を直接書き込めない。
-- `subscriptions` の書き込みはservice roleのみ。
+- `cold`、`guided_retry`、`transfer`、`review`を区別する。
+- 同一Calendar Date・焦点・役割の最初の有効な無補助attemptだけがdurable候補になる。
+- guided retryはimmediate changeだけを更新する。
+- 同日guided retryを何回成功してもheld/stableが増えない。
+- 同じ`client_attempt_id`の再送が1件だけになる。
+- 同じIDで異なるpayloadを拒否する。
+- technical invalid reasonごとに成果へ入らない。
+- 保存失敗中はdurable状態を確定しない。
+- 別日の無補助成功だけがheld候補になる。
+- 別課題役割の無補助成功だけがtransferred候補になる。
+- 7日Review Due Date未到来なら、Program Day 7でもstableへ捏造しない。
 
-## API統合テスト
+具体的な点数境界テストは、判定しきい値が`MVP初期値`として決まってから追加する。旧80点、10点差を自動的に正本にしない。
 
-### `/api/bootstrap`
+## 6. 日次プランナーテスト
 
-- 初回でprofileが作られる。
-- 2回目で同じprofileが返る。
-- `free_trial_started_at` がサーバー時刻で保存される。
+- 5つの役割がそろう。
+- review枠に期限到来/期限超過を最大1件入れる。
+- 同一課題を必須枠で重複させない。
+- activeかつversion整合する課題だけを選ぶ。
+- 国籍・母語でスコアや共通優先度を補正しない。
+- 良好日の短縮条件はサーバー確認される。
+- optional extensionはrequired countへ含まれない。
+- 未完了sessionをCalendar Date変更で再生成しない。
 
-### `/api/daily-session`
+## 7. API統合テスト
 
-- 7件のitemsが返る。
-- 単語5、文2になる。
-- slot_type配分が苦手3、新規2、復習2になる。
-- 同日再呼び出しで同じitemsが返る。
+### 認証・アクセス
 
-### `/api/practice-session`
+- 未認証を拒否。
+- 他ユーザーのsession/attempt IDを拒否。
+- trial、subscription、historical read権限を分ける。
+- Day 7後の新規判定を拒否し、過去閲覧は許可。
 
-- `mode = weak_drill` で `phoneme_state.mastery_ewma` が低い音素を優先したitemsが返る。
-- `mode = phoneme_select` で指定 `phoneme_id` をターゲットに持つitemsが返る。
-- `phoneme_select` で `phoneme_id` 未指定の場合は拒否される。
-- `practice_items.is_active = false` の問題は返らない。
-- 未Proかつ無料期間外の場合は `PAYWALL_REQUIRED` になる。
+### Speech token
 
-### `/api/assess`
+- 認証済み・アクセス可能ユーザーだけに短期トークンを返す。
+- Azure keyを返さない・ログしない。
+- locale/capabilities/expiryを返す。
 
-Azureモックを使って確認する。
+### Assessment
 
-- attemptが保存される。
-- phoneme resultsが保存される。
-- best attemptが更新される。
-- phoneme_stateが更新される。
-- badge条件が満たされたらuser_badgesに保存される。
-- Azure失敗時はerror_logsのみ保存される。
+- 管理課題、reference text、content versionを検証する。
+- 音声本体を受け取らない。
+- valid/invalidを正しく分類する。
+- 主要結果を長期集計待ちから分離する。
+- 保存失敗時にretryable persistence stateを返せる。
+- 再送でattempt、evidence、Program Dayを重複させない。
+- guided retryとcoldを混同しない。
 
-### `/api/free-assess`
+### Completion/report
 
-- Proでない場合拒否される。
-- 同意なしの場合拒否される。
-- 日次上限超過で拒否される。
-- 成功時に `free_attempts` だけ保存される。
-- `phoneme_state` が変わらない。
+- 通常・短縮の必須slotを検証する。
+- optional extensionなしで完了できる。
+- 1 Calendar Dateで二重Program Dayを防ぐ。
+- reportがevidenceを根拠に再現できる。
 
-### `/api/speech-token`
+### RevenueCat
 
-- 認証済みかつ練習可能なユーザーへ短期トークンを返す。
-- Azure設定不足、Azure発行失敗、認証エラーを区別する。
-- Subscription Keyがレスポンスとログへ含まれない。
+- webhook認証なしを拒否。
+- イベント再送を重複処理しない。
+- App User IDを誤ったuserへ紐付けない。
+- entitlement失効・billing issue・restoreを扱う。
 
-### 発音判定正規化
+### Export/delete
 
-- 欠損値を0や空文字にせず`null`にする。
-- Omission、Insertion、UnexpectedBreak、MissingBreak、Monotoneを分類する。
-- IPA候補をスコア降順で最大5件にする。
-- locale capabilitiesで非対応項目を非表示にする。
-- 古いrequest ID、連打、キャンセル、画面破棄後の結果を採用しない。
+- 本人データだけを対象にする。
+- 音声、秘密、内部不正防止値をexportへ含めない。
+- 学習削除でtrialを再付与しない。
+- deletionと未送信outboxの競合を安全に扱う。
 
-### `/api/free-text-consent`
+## 8. DB・RLSテスト
 
-- Proでない場合拒否される。
-- Pro有効ユーザーで `profiles.free_text_consent_version` が保存される。
-- `free_text_consented_at` がサーバー時刻で保存される。
+- migrationとseedが対象環境で再現できる。
+- user Aはuser Bのsession、attempt、reportをread/writeできない。
+- クライアントはsubscription、trial履歴、active content、server-verified evidenceを直接更新できない。
+- parent ownershipを経由する子データも他人が読めない。
+- idempotencyの一意性が並行再送でも壊れない。
+- same-day durable evidenceとProgram Day completionの二重作成を防ぐ。
+- delete後に孤立データが残らない。
 
-### `/api/tts`
+具体SQLとmigrationは本段階の対象外。
 
-- キャッシュなしでPythonサービスが呼ばれる。
-- キャッシュありで再生成されない。
-- `normal` と `slow` が別キャッシュになる。
+## 9. コンテンツ受け入れ
 
-### RevenueCat webhook
+機械検査:
 
-- 認証なしは拒否される。
-- RevenueCat App User ID を Supabase `user_id` として扱う。
-- 有効イベントで `subscriptions` が更新される。
-- Pro entitlementが `access-status` に反映される。
+- focus groupが8。
+- 各群12課題、計96。
+- 診断候補8、合計約104。
+- 各課題にstandard/slow、計約208音声参照。
+- 主/代替コツ16、汎用5、合計21以上。
+- 正式図解8以上。
+- active資産にplaceholder、欠損参照、重複IDがない。
+- assessment/coaching localeとversionが整合する。
 
-## E2Eテスト
+人間/実機レビュー:
 
-### デイリー完走
+- 英文、IPA、焦点位置。
+- 標準/スロー音声の自然さ。
+- 助言と図解の一致。
+- 発音指導者承認。
+- 複数話者・複数端末のAzure挙動。
+- 発見→コーチ→再録音の完走。
 
-1. 新規ユーザーで起動。
-2. ホームでスタート。
-3. 1問目を録音。
-4. 判定後、2段IPAとスコアを確認。
-5. 詳細を見る。
-6. 赤/黄の音から直し方へ進む。
-7. もう一度録音する。
-8. 次へ進む。
-9. 7問完了する。
-10. ホームで `7 / 7` と完了状態を確認。
-11. 進捗でストリーク、ヒートマップ、グラフが更新される。
+具体的な英文とレビュー結果は未確認。
 
-### 間違いゼロ
+## 10. Mobile自動テスト
 
-1. Azureモックで全音素80以上を返す。
-2. 判定後に「素晴らしい！」が出る。
-3. 詳細が強制表示されない。
+- 録音状態機械、連打、取消、古いrequestの無視。
+- 画面破棄後の結果を採用しない。
+- 主要結果が対象1音中心。
+- 保存保留でも次へ進める。
+- 再送完了で重複表示しない。
+- audio URI欠損で画面が壊れない。
+- 30暦日・14日完了・学習削除でローカル音声を削除する。
+- offlineで新規判定を止め、過去閲覧を維持する。
+- Day 7後のread-only画面。
+- RevenueCat priceを固定文字列で発明しない。
 
-### 課金ウォール
+## 11. 実機Azureテスト
 
-1. `free_trial_started_at` を8日前にする。
-2. RevenueCat Proなしにする。
-3. 練習開始で課金ウォールが出る。
-4. 閉じると練習が始まらない。
-5. Pro有効にすると練習できる。
+必須:
 
-### 自由入力
+- 実iPhoneでマイク権限、録音開始、直接stream、停止、final result。
+- 短期tokenの取得、更新、失効。
+- 単語、短文、標準/スローお手本。
+- 無音、低音量、短すぎ、クリッピング、NoMatch、取消。
+- 対象音欠損、違う課題、Bluetooth/route変更。
+- foreground/background、画面離脱、通信切替。
+- before/afterローカル再生と削除。
+- 初期8焦点群の対象音取得。
 
-1. 無料期間中ユーザーで自由入力を開く。
-2. 課金ウォールが出る。
-3. Pro有効ユーザーで自由入力を開く。
-4. 初回同意を完了する。
-5. 判定する。
-6. `free_attempts` に保存され、進捗が変わらないことを確認する。
+Azureや有料APIの実接続は、費用と対象環境の明示承認後に行う。
 
-## 手動確認
+## 12. 性能・安定性
 
-自動テストで拾いにくい項目。
+次は`実機検証目標`であり、正式な合格実績ではない。
 
-- 録音ボタンの押しやすさ。
-- 録音中の中断確認。
-- お手本と自分の聞き比べ。
-- 直し方の文章が2〜3行以内に収まる。
-- 色だけでなくラベル/記号で意味が分かる。
-- オフライン時に練習不可であることが分かる。
-- 通知許可拒否時に設定が破綻しない。
-- データ削除の確認文が明確である。
+| 区間 | 検証候補 |
+| --- | ---: |
+| 初回問題表示→録音可能 | P95 1.5秒 |
+| 2問目以降→録音可能 | P95 0.5秒 |
+| 録音ボタン→開始 | P95 0.25秒 |
+| 録音停止→Azure final | P95 2.0秒 |
+| Azure final→主要結果 | P95 0.8秒 |
+| 録音停止→主要結果 | P95 3.0秒 |
+| 次へ→次問録音可能 | P95 0.7秒 |
+| 異常時打ち切り | 8秒以内 |
+| 通常5課題 | 中央値4分、P90 6分以内 |
 
-## シークレット確認
+有効録音の技術成功率候補97〜98%も未検証である。正式値は実機・話者・ネットワーク別の十分なサンプルから決める。
 
-実装フェーズでは、キーが必要な作業の前に `.env` の該当項目が埋まっていることを確認する。
+主要表示、persistence、aggregationの時間を別々に計測する。DB保存完了をUI表示時間へ混ぜない。
 
-確認対象:
+## 13. 課金実機テスト
 
-- `AZURE_SPEECH_KEY`
-- `AZURE_SPEECH_REGION`
-- `AZURE_SPEECH_LOCALE`
-- `OPENAI_API_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `EXPO_PUBLIC_SUPABASE_URL`
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_REVENUECAT_IOS_PUBLIC_SDK_KEY`
-- `REVENUECAT_SECRET_KEY`
-- `REVENUECAT_WEBHOOK_AUTH_TOKEN`
-- `PYTHON_SERVICE_URL`
-- `PYTHON_SERVICE_API_KEY`
-- `PIPER_VOICE_US`
-- `PIPER_VOICE_DIR`
+- RevenueCat sandboxで月額・年額商品を取得。
+- 購入、取消、復元、entitlement反映。
+- Day 7後Paywall前後のアクセス。
+- 未購読のread-only権限。
+- オフライン・RevenueCat障害時の安全な表示。
+- Apple Introductory Offerを前提にしていないこと。
 
-値そのものはチャットに書かせない。
+商品、価格、sandbox状態は未確認。
 
-## リリース前チェックリスト
+## 14. セキュリティ・プライバシー
 
-- `.env` がコミットされていない。
-- `.env.example` が最新。
-- 追加した環境変数をユーザーに通知済み。
-- Supabase migrationがローカルで通る。
-- seedがローカルで通る。
-- RLSテストが通る。
-- Azure実接続テストが成功する。
-- Piper TTSが生成とキャッシュに成功する。
-- RevenueCat sandbox購入と復元が成功する。
-- 8日目課金ウォールが動く。
-- データ削除が動く。
-- JSON書き出しが動く。
-- サーバーにユーザー音声が保存されていない。
-- ステージングAPI、ステージングPython推論サービス、ステージングSupabaseで主要E2Eが通る。
-- TestFlight配布前に、ステージング環境でデイリー完走、課金ウォール、自由入力、データ削除のE2E動作確認が完了している。
+- client bundleにserver secretsがない。
+- 自社API、DB、Storage、ログにユーザー音声がない。
+- exportに音声・秘密がない。
+- ローカル音声が最大30暦日で削除される。
+- 14日復習完了後の早期削除と学習削除が動く。
+- RevenueCat webhookとAPI authが認証される。
+- protected writeの負のテストが通る。
+- secret/error redactionが通る。
 
-## フェーズ4セルフレビュー
+## 15. 文書チェック
 
-- マスター設計書・既作成ドキュメントとの矛盾: デイリー7個、判定3画面、EWMA、自由入力分離、RevenueCat、音声非保存、ローカルSupabaseを検証項目に反映済み。
-- Codexが実装に着手できる具体性: ユニット/DB/API/E2E/手動/リリース前の確認観点を具体化済み。
-- 用語・命名の一貫性: `attempts`、`free_attempts`、`phoneme_state`、`daily_session`、Pro entitlementを既存仕様と一致させた。
+- マスター、00、01〜10、Phase 13の固定値が一致する。
+- Markdown内部リンクが存在する。
+- 旧称は現在実装・履歴・移行説明だけ。
+- 旧課題数、旧価格、旧コンテンツ量が現役仕様として残らない。
+- 実行時OpenAI/Piper、自由入力、オンデバイス等の一致は対象外/現在実装の説明だけ。
+- TBD、MVP初期値、実機検証目標、未確認が区別される。
+
+## 16. MVP技術的完成
+
+次をすべて満たすまで完成としない。
+
+- 新中心体験、自動テスト、統合テストが通る。
+- 約104課題と資産のレビューが完了する。
+- 実機Azureの品質・速度証拠がある。
+- RevenueCat sandboxが完走する。
+- trial、subscription、削除、音声、秘密境界が確認される。
+- 設計書と実装差分が解消または明示承認される。
+
+App Store申請、一般公開、Productionデプロイは技術的完成の外であり、別承認とする。

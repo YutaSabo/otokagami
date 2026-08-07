@@ -1,94 +1,145 @@
-# Phase 13 TestFlight前チェックリスト
+# Phase 13 新MVP準備状況
 
-## 実行済みローカル確認
+> 文書状態: 現役の状態記録
+> 最終棚卸し: 2026-08-07
+> 注意: 旧MVPの確認結果と、新MVPの準備状況を混同しない。
 
-| 項目 | 結果 | メモ |
+## 1. 状態ラベル
+
+| ラベル | 意味 |
+| --- | --- |
+| `確認済み` | 新MVP仕様に対する証拠がある |
+| `旧実装のみ確認済み` | 再利用候補はあるが、新MVP適合は未確認 |
+| `未実装` | 新MVPに必要だが、現在コードにない |
+| `未確認` | 実機・Hosted・外部サービスを確認していない |
+| `BLOCKED` | 必要な承認、端末、認証、外部状態が不足 |
+
+## 2. 第3段階の状態
+
+| 項目 | 状態 | 根拠 |
 | --- | --- | --- |
-| `npm run lint --workspaces --if-present` | PASS | API、mobile、core、inferenceの型チェック/compileallが成功。 |
-| `npm run test --workspaces --if-present` | PASS | API 38件、mobile 14件、core 13件、inference 6件が成功。 |
-| `npm run build --workspaces --if-present` | PASS | Next.js build、Expo public config、core typecheck、inference compileallが成功。 |
-| `supabase db reset` | PASS | 全migrationとseedを再適用し、`normalized_result`、`performance_metrics`、母語タグ制約を実DBで確認。 |
-| `supabase/tests/rls.sql` | PASS | `supabase_db_pronunciation-mirror` に対してRLS SQLが成功。 |
-| `.env` Git管理確認 | PASS | `git ls-files '.env' '.env.*'` は `.env.example` のみ。 |
-| `.gitignore` 確認 | PASS | `.env`、`.env.*` を除外し、`.env.example` のみ許可。 |
-| Expo公開変数確認 | PASS | mobileテストでExpo側は `EXPO_PUBLIC_*` のみ参照し、サーバー専用キー名を参照しないことを確認。 |
-| API secret/error redaction確認 | PASS | `apps/api/lib/assess.mjs` の error log sanitization と `apps/api/lib/security.mjs` 経由のRevenueCat raw event redactionを確認。 |
-| Python内部APIキー保護 | PASS | `/internal/*` が `X-Internal-API-Key` 必須で、未設定時500、不一致時401。inferenceテストでも確認済み。 |
-| RevenueCat webhook認証 | PASS | webhook処理が専用env必須かつAuthorization検証を行う。APIテストで未認証拒否と購読更新を確認済み。 |
-| 音声非保存のコード確認 | PASS | iPhoneからAzureへ直接ストリーミングし、`/api/assess` は結果JSONだけを受信する。TTSキャッシュはお手本音声のみ。 |
-| データ削除/JSON書き出し | PASS | APIテストで削除対象行の削除、profile/subscription維持、exportに音声本体/secretが含まれないことを確認。 |
-| Azure Speech実接続 | 要再確認 | 現行方式はiOS SDK push streamである。Development Build実機で短期トークン、PCMストリーム、最終結果、性能値を確認する。 |
-| Piper TTS実接続 | PASS | inference service `/internal/tts` で normal/slow ともHTTP 200、音声base64ありを確認。 |
-| OpenAI実接続 | PASS | Responses APIでHTTP 200、output content textありを確認。生成本文は記録しない。 |
-| RevenueCat env確認 | PASS | `.env` の `REVENUECAT_SECRET_KEY`、`REVENUECAT_WEBHOOK_AUTH_TOKEN`、`EXPO_PUBLIC_REVENUECAT_IOS_PUBLIC_SDK_KEY` が設定済み。API側のwebhook必須env読み込みも成功。 |
-| ステージングSupabase migration/seed | PASS | `STAGING_SUPABASE_DB_URL` に対して `supabase db push --include-seed` が成功。dry-runでremote database is up to dateを確認。 |
-| ステージングSupabase seed件数 | PASS | REST確認で `phonemes=41`、`phoneme_clusters=20`、`practice_items=428`、`practice_item_targets=428`、`advice_pages=18`。 |
-| ステージングSupabase匿名ログイン | PASS | Supabase Authでanonymous sign-inを有効化後、ステージング匿名セッション作成、`/api/bootstrap`、`/api/access-status` が成功。 |
-| ステージングNext.js API | PASS | Vercel stagingの `/api/health`、`/api/bootstrap`、`/api/daily-session`、`/api/progress`、`/api/export`、`/api/delete-learning-data` を確認。 |
-| ステージングPython inference | PASS | Fly.io stagingの `/internal/health`、`/internal/ipa`、`/internal/tts` normal/slow が内部APIキー付きで成功。 |
-| ステージングTTS配信 | PASS | Vercel stagingで `/api/daily-session` がTTS URLを返し、`/api/tts/audio/*` が `audio/wav` を返すことを確認。Vercel `/tmp` 消失時はDBキャッシュ行から再生成する修正を追加済み。 |
-| mobileステージングenv | PASS | `.env` の `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` が `STAGING_SUPABASE_*` と一致し、`EXPO_PUBLIC_API_BASE_URL` がVercel stagingを向くことを値非表示で確認。 |
-| mobileローカル確認 | PASS | mobileのtest、build、lintに加え、Azureネイティブモジュール単体とiOSアプリ全体のSimulator向け統合ビルドが成功。 |
-| TestFlightバイナリ提出 | PASS | 0.1.1 (8) の署名済みIPAを生成し、2026-07-13にApp Store Connectへ提出済み。Appleの処理完了後にTestFlightで実機確認する。 |
+| 新製品方針の文書化 | 確認済み | マスター、仕様01〜10、Phase 13を新方針へ改訂 |
+| コード・DBの新仕様適合 | 未実装 | 第3段階は文書変更のみ |
+| Todoist再編 | 未実装 | 本件ではTodoist変更禁止 |
+| Hosted環境 | 未確認 | 外部接続を行っていない |
+| 実機Azure | 未確認 | 有料API・実機操作を行っていない |
+| RevenueCat sandbox | 未確認 | 外部課金操作を行っていない |
 
-## 未完了またはブロック中
+## 3. 再利用可能な旧実装基盤
 
-| 項目 | 状態 | 理由/次アクション |
+次は第1段階調査で存在が確認された。ただし、新MVPの完成証拠ではない。
+
+| 基盤 | 状態 | 新MVPで必要な再確認 |
 | --- | --- | --- |
-| RevenueCat sandbox購入/復元 | BLOCKED | envは設定済み。sandbox購入、復元、webhookによる `subscriptions` 更新は、iOS sandbox/TestFlight相当の実機フローまたはステージングwebhook公開URLが必要なため未実施。 |
-| ステージング実機E2E | 未実施 | ステージングAPI/Supabaseを向くmobile設定は確認済み。iPhone実機またはDevelopment Buildで、録音、音声再生、採点、画面遷移、データ管理を手動確認する。 |
+| Supabase anonymous auth | 旧実装のみ確認済み | Program Day/trialとの統合 |
+| Azure短期トークン | 旧実装のみ確認済み | access、expiry、secret境界 |
+| iOS Azure直接PCM stream | 旧実装のみ確認済み | 実機8焦点群、性能、route変更 |
+| Recognizer事前準備 | 旧実装のみ確認済み | 5課題フローの区間P95 |
+| Azure結果正規化 | 旧実装のみ確認済み | 対象1音主要結果、invalid分類 |
+| API再試行状態 | 旧実装のみ確認済み | client attempt idempotency、outbox |
+| RevenueCat SDK/webhookコード | 旧実装のみ確認済み | sandbox商品、購入、復元、再送 |
+| Supabase RLS・テスト | 旧実装のみ確認済み | durable evidence/protected writeの負テスト |
+| export/delete | 旧実装のみ確認済み | 新データ概念、trial分離、local audio |
 
-## TestFlight前ブロッカー
+## 4. 新MVP中心体験
 
-1. iPhone実機またはdev clientでステージングE2Eを完走する。
-2. RevenueCat sandboxで購入、復元、webhook更新、`access-status` 反映を確認する。
-3. TestFlight前提の録音/採点/音声再生の端末差分を確認する。
+| 項目 | 状態 |
+| --- | --- |
+| 1日1焦点音プランナー | 未実装 |
+| 通常5課題の役割構成 | 未実装 |
+| 良好日の3課題程度短縮 | 未実装 |
+| 任意追加2課題を完了条件から分離 | 未実装 |
+| 対象1音の主要結果 | 未実装 |
+| 1画面文脈の静的コーチ | 未実装 |
+| guided retryとcorrection cycle | 未実装 |
+| before／after比較 | 未実装 |
+| 保存と主要結果の分離 | 未実装 |
+| 保存失敗時の録音不要再送 | 未実装 |
 
-## ステージング必須E2E
+## 5. 学習・無料体験
 
-- 新規匿名ユーザー開始。
-- デイリー7問完走。
-- 期待IPA/実測IPAの2段表示。
-- 詳細から直し方へ遷移。
-- 8日目課金ウォール。
-- RevenueCat sandbox Pro有効化。
-- 自由入力同意と判定。
-- 自由入力が進捗に混ざらないこと。
-- 学習データ削除。
-- JSON書き出し。
+| 項目 | 状態 |
+| --- | --- |
+| Program Day / Calendar Date / Review Due Date分離 | 未実装 |
+| 7 active learning days | 未実装 |
+| 1 Calendar Dateで最大1 Program Day | 未実装 |
+| 未完了Dayの後日再開 | 未実装 |
+| 1・3・7・14日復習 | 旧実装のみ確認済み |
+| 期限超過を最大1件提示 | 未実装 |
+| guided retryをdurable進捗から除外 | 未実装 |
+| Day 7レポート | 未実装 |
+| Day 8前Paywall | 旧暦日方式のみ実装済み。新仕様は未実装 |
+| 未購読の過去閲覧 | 未実装または一部実装、要確認 |
 
-## 実機手動確認手順
+## 6. コンテンツ
 
-1. iPhoneのTestFlightでPronunciation Mirror 0.1.1 (8)へ更新して起動する。
-2. 初回起動で匿名ユーザー作成と初期化が成功し、ホーム画面が表示されることを確認する。
-3. 今日の練習を開き、7問が表示されることを確認する。
-4. 各問題でnormal/slowのお手本音声が再生できることを確認する。
-5. 1問以上録音し、採点結果、期待IPA、実測IPA、音素別フィードバックが表示されることを確認する。
-6. 詳細または助言導線から直し方ページへ遷移できることを確認する。
-7. 7問完走後、進捗画面の練習回数/習熟度/バッジ等が更新されることを確認する。
-8. 自由入力で同意、判定、助言表示ができ、通常練習の進捗集計に混ざらないことを確認する。
-9. JSON書き出しが成功し、音声本体やsecretが含まれないことを確認する。
-10. 学習データ削除後、練習履歴/進捗が消え、profile/subscription相当の状態は維持されることを確認する。
-11. RevenueCat sandboxで購入、復元、Paywall解除、`access-status` のPro反映を確認する。
+第1段階のリポジトリ調査で確認された値であり、Hosted Supabaseは未確認。
 
-### Development Buildで再現確認する場合の起動コマンド
+| 項目 | 現在確認 | 新MVP最低 | 状態 |
+| --- | ---: | ---: | --- |
+| 候補課題 | 428 | - | 旧候補のみ |
+| reviewed + active課題 | 6 | 約104 | 不足 |
+| active文 | 1 | 焦点群役割を満たす数 | 不足 |
+| active助言 | 0 | 21以上 | 不足 |
+| 図解 | placeholder 15 | 正式8以上 | 不足 |
+| standard/slow音声 | 実行時生成前提 | 約208レビュー済み | 未準備 |
 
-```sh
-npm --workspace @pronunciation-mirror/mobile run ios
-```
+初期8焦点群、具体的英文、発音指導者レビュー、Azure実機検証は未確認。
 
-実機で接続する場合は、iPhoneとMacを同じネットワークに置き、Expo dev clientから表示されたMetro URLへ接続する。
+## 7. 外すべき旧中心経路
 
-## TestFlight後でもよい改善
+コードは第3段階で変更していない。
 
-- 実機録音の端末差分に応じた録音フォーマット調整。
-- TTSキャッシュの保存先をローカルファイルからSupabase Storage等へ切り替える運用設計。
-- OpenAI未知ケース助言の品質評価ケース追加。
-- ステージングE2E自動化。
+| 項目 | 現在 | 新MVP |
+| --- | --- | --- |
+| 自由入力 | 実装あり | 対象外。入口・中心経路を無効化予定 |
+| 実行時OpenAI助言 | 実装あり | 対象外 |
+| 実行時Piper/Python | 実装あり | 中心経路対象外 |
+| 音素表/別建て苦手ドリル | 実装あり | 対象外 |
+| レベル/バッジ/称号 | 実装あり | 対象外 |
+| 全音素詳細/総合点中心 | 実装あり | 中心表示対象外 |
 
-## MVP対象外
+削除・無効化・移行の具体判断は第4段階以降。
 
-- 本番環境作成。
-- App Store提出。
-- 本番課金商品の確定/提出。
-- Phase 2機能。
+## 8. 品質・実機
+
+| 項目 | 状態 |
+| --- | --- |
+| iPhone実機録音とAzure結果 | 未確認 |
+| 初期8焦点群のAzure安定性 | 未確認 |
+| 主要結果P95 | 未確認 |
+| 有効録音技術成功率 | 未確認 |
+| 通常5課題完了時間 | 未確認 |
+| Bluetooth/route/background | 未確認 |
+| local before/after 30日削除 | 未実装 |
+| URI欠損時UX | 未実装 |
+
+P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASSではない。
+
+## 9. 課金・外部環境
+
+| 項目 | 状態 |
+| --- | --- |
+| RevenueCat product IDs / Offering / Package | 未確認・TBD |
+| 実価格 | TBD |
+| sandbox購入・復元 | 未確認 |
+| webhookの新MVP統合 | 旧実装のみ確認済み |
+| Hosted Supabase schema/seed | 未確認 |
+| Vercel/Fly.io/Expo現在状態 | 未確認 |
+| App Store Connect/TestFlight現在状態 | 未確認 |
+
+過去文書には旧ビルドの提出済み記録があったが、現在の外部状態を再確認しておらず、新MVP完成範囲にも含めない。
+
+## 10. 新MVP完了ブロッカー
+
+1. 第4段階以降の実装・移行。
+2. 約104課題と全資産のレビュー。
+3. 実機Azure品質・速度確認。
+4. 主要結果と保存の分離、idempotency、durable進捗の検証。
+5. 7 active learning daysと休止・復帰。
+6. RevenueCat sandbox購入・復元・webhook。
+7. 音声非保存、端末保持、データ権利、認可の確認。
+
+## 11. 技術的完成状態
+
+第3段階完了時点では、文書改訂のみが技術的に完了する。アプリの新MVP実装、外部接続、実機受け入れ、Production、App Store作業は未完了である。
