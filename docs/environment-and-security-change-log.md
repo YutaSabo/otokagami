@@ -62,6 +62,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | ESC-009 | プロジェクト依存 | Azure Speech iOS SDK 1.43をCocoaPodsで導入 | `apps/mobile/ios` | 有効・必要 | 低 | SDK更新時に互換性と公式サポート状況を再確認 | 2026-07-12 |
 | ESC-010 | ローカル開発ツール | fastlane 2.237.0をHomebrewで導入 | macOS | 有効・必要 | 低 | TestFlightローカルビルド運用終了時に削除可否を判断 | 2026-07-13 |
 | ESC-011 | ローカルDB検証・外部棚卸し | Supabase CLI導入、使い捨てlocal stack、Hosted read-only inventory | macOS / Docker / Supabase | 一時的 | 中 | 保持資源の停止状態と削除要否を再確認 | 2026-08-07 |
+| ESC-012 | 暗号化バックアップ・ローカル復元 | S6-02 Hosted論理バックアップと独立local restore | macOS / Docker / Supabase | 一時的・PARTIAL | 中 | 旧`Otokagami`の既存DB credentialを確認後に未完了分を再開 | 2026-08-09 |
 
 ## 8. 個別変更記録
 
@@ -317,6 +318,48 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **次回確認日**：要確認
 - **対応結果・補足**：Hosted DB write、migration、Seed、RLS変更、backup作成、restore、Production操作は行っていない。SQL Editorのquery autosaveは事前承認済みの外部メタデータ保存として本項へ記録した。
 
+## ESC-012：S6-02暗号化論理バックアップと独立local restore
+
+- **分類**：暗号化バックアップ・ローカル復元
+- **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、Hosted Supabaseの`otokagami-staging`と旧`Otokagami`
+- **実施日時**：2026-08-08〜2026-08-09
+- **実施者**：ユーザー承認のもとCodex
+- **実施状況**：`PARTIAL`。`otokagami-staging`は暗号化論理バックアップ、独立local restore、read-only reconciliationまで完了した。旧`Otokagami`は既存Database passwordの認証失敗により、preflightの先へ進まずbackupとrestoreを実施していない。
+- **将来の正本と接続境界**：将来の正本を`otokagami-staging`とする判断を記録したが、S6-01で確定したsplit topology、アプリ、API、CLI、Vercel、Mobileの接続先は変更していない。旧`Otokagami`も照合元として変更・削除していない。
+- **暗号化保存先**：`/Users/hemmiminami/.otokagami-backups/s6-02/otokagami-s6-02-backups.sparsebundle`。APFS sparsebundle、AES暗号化`YES`、passphrase slot 1、論理上限1GiB、unmount後の物理使用量25,544KiB。親ディレクトリとsparsebundleディレクトリはmode `700`、暗号化領域内の正規artifactはmode `600`。
+- **暗号化状態**：作成時にAES-256を指定し、マウント中のimage metadataで`image-encrypted=true`、unmount後の`hdiutil isencrypted`で`encrypted: YES`を確認した。passphrase、接続文字列、credentialは台帳・Git・Todoistへ記録していない。
+- **保存artifact**：`roles.sql`、`schema.sql`、`data.sql`、`supabase_migrations`のschema/data、AuthとStorageの個別schema/dataおよび結合schema/data、pre/post/local inventory、manifest、supplemental manifest、SHA-256一覧、checksum検証log、reconciliation、秘密除去済みexecution logを暗号化領域内へ保存した。失敗試行の証跡も削除せず同じ暗号化領域内で隔離した。
+- **主要artifactのサイズとSHA-256**：
+
+  | artifact | bytes | SHA-256 |
+  | --- | ---: | --- |
+  | `roles.sql` | 358 | `4350a72b5ec109888e740c17f3eb4da2fcd95ab73af26499538ed0bf615db543` |
+  | `schema.sql` | 49,141 | `bd9b945d6071908bd463bfc4148b866362c92d4aa062bcce0a96bbd4528ffebe` |
+  | `data.sql` | 316,367 | `5fadc32d9d833575f3b633d3bd8a3de0a27248807ad929a2a6dc0d7ddb3e1e24` |
+  | `migrations_schema.sql` | 1,195 | `dcb3e0cf0a2720c65e6211b0b63f93f68202bdf119af12c85782afb3e244cf24` |
+  | `migrations_data.sql` | 29,715 | `92e1aa6132b366ab5a7ac2550c839453f0224a71b841a062b01810d2aa44671d` |
+  | `auth_storage_schema.sql` | 94,828 | `7cc4c39aeb259c375bd14cf36bf5856ff475dbc06cf0e06bca922d5835db17bd` |
+  | `auth_storage_data.sql` | 36,414 | `682b6e5fcb5eb8501237a613199d8a72f547cd3de02534edab1ff9806f0cc03e` |
+
+- **checksum**：正規backupと最終照合証拠48件を含む`S6-02-SHA256SUMS`を作成し、全48件`OK`を再確認した。checksum一覧自体は4,788 bytes、SHA-256は`0e62c4896c55581b3190d965a781c4bb8dd536148101fe0857850a6834850b8d`。
+- **Hosted preflight/postflight**：`otokagami-staging`では`BEGIN READ ONLY`、5秒のstatement timeout、`transaction_read_only=on`、`ROLLBACK`を確認した。PostgreSQL 17.6、DB約13.0MB、Hosted migration 2件、public table 21件。backup前後の全対象table件数は一致した。Hosted DBへのINSERT、UPDATE、DELETE、migration、Seed、RLS変更、restoreは実施していない。
+- **repositoryとの差分**：Hosted migrationは`20260704000000`と`20260712000000`の2件で、repositoryの3件目`20260806000000_generalize_practice_difficulty.sql`はHosted未適用。適用は本作業の対象外であり実施していない。
+- **restore環境**：`otokagami-staging`用project IDは`otokagami-s602-staging-20260808`、専用portは`56420`〜`56429`。旧`Otokagami`用project IDは`otokagami-s602-legacy-20260808`、専用portは`56520`〜`56529`。remote linkとHosted credential保存はなく、S6-01 stackを再利用・resetしていない。
+- **restore結果**：`otokagami-staging`はroles、schema、migration、Auth、public全table件数、品質集計、RLS policy、triggerが一致した。public/Auth/Storageのrow countは完全一致。local Supabase側が新しい管理schemaであるため、local-onlyのStorage table 2件・column 18件・index 5件・constraint 5件、Hosted/localで各1件ずつ異なるStorage function、Hosted-onlyのAuth index 4件という管理schema version差を分離記録した。バックアップSQLを修正して一致扱いにはしていない。
+- **主要aggregate**：HostedのAuth user 23、profile 21、installation 21、daily session 13、session item 91、attempt 34、phoneme result 127。auth userに対してprofile/installationがない件数は各2、逆方向は各0。主要orphanはsession item 0、attempt 0、phoneme result 0。phoneme resultがないattemptは6、正規化practice textのduplicate groupは60。これらはlocal restoreで再現した。
+- **legacy分類**：daily attempt 32、weak drill 2、phoneme state 6、snapshot 13、badge 4、TTS cache 13、error log 12。旧EWMAやbest attemptを新しいdurable evidenceへ変換していない。
+- **Storage棚卸し**：Hostedのbucket 0、object 0。Storage object実体のdownloadは不要であり実施していない。`tts_cache` 13件は参照先Storageが存在しない状態として再現され、ユーザー録音が自社Storageに保存されている証拠はなかった。
+- **秘密・個人情報保護**：暗号化コンテナ全体に対し、既存staging DB password、両source URL、private key marker、service role、Azure、OpenAI、RevenueCat secret名の完全一致検査を行い全て0件。manifest、execution log、台帳にはcredential、source URL、個人データを記録していない。初期診断で接続URL解析の不備によりcredential断片がエラー欄へ混ざる可能性を検出したため、当該証跡は暗号化領域内へ隔離し、以後は標準URL解析と多重秘匿フィルターを使用した。credential rotationの要否は別途判断する。
+- **Supabase CLI実行方式**：CLI 2.112.0で各artifactの`db dump --dry-run`を先行実行した。CLI内部Dockerへ安全なprompt入力が転送されない制約と、`--schema auth,storage`生成スクリプトの引用符不備を確認したため、CLI生成スクリプトを保存せず、S6-02専用の公式Supabase Postgres container内で実行した。AuthとStorageは個別に公式生成し、個別artifactを保持したうえで結合artifactも作成した。ホストのraw `pg_dump`だけへの置換、password引数、平文credential fileは使用していない。
+- **保持中resource**：2 stack合計22 containerをすべて停止し、稼働中0件。DB volume 2件は約102.7MBと122.2MB、Storage volume 2件は各0Bで、合計4 volumeを保持している。containerの削除は行っていない。専用設定ディレクトリ`/private/tmp/otokagami-s602-staging-20260808`と`/private/tmp/otokagami-s602-legacy-20260808`、各種秘密を含まないhelper、S6-01資源、IPA、SQL Editor autosave queryも削除していない。Docker imageは他stackと共有されるため今回分の専有量は未確定。
+- **retention**：暗号化backup、停止container、volume、失敗証跡はStage 10完了時またはユーザーの明示的な削除承認まで保持する。オフサイト・クラウドへの転送は実施していない。
+- **Backup/PITR**：S6-01で両projectがFree Plan、scheduled backup利用不可、PITR未契約と確認した状態から、plan、PITR、physical backup、restore設定を変更していない。S6-02では費用ゼロの論理backupだけを作成した。
+- **残るリスク**：旧`Otokagami` backup/restoreが未完了、backupが同一端末内だけ、stagingとlocalの管理Auth/Storage schema version差、repository migration 1件のHosted未適用、停止container・volume・暗号化backupによるディスク消費、初期診断に伴うstaging DB credential rotation要否。
+- **状態確認方法**：`hdiutil isencrypted`、保存先mode、sparsebundle容量、cleanup識別子で絞った`docker ps -a`と`docker volume ls`、暗号化領域内のmanifestとSHA-256検証logを確認する。コンテナのmountには人間が保持するpassphraseが必要。
+- **停止・再開手順**：再開前に同じ2つのproject ID、専用port、22 container、4 volume、remote linkなしを確認する。旧`Otokagami`は正しい既存Database passwordを安全入力できる場合だけbackupへ進み、password resetは別承認とする。
+- **削除手順**：削除は未承認。別承認後にbackup、22 container、4 volume、関連一時ディレクトリ、helper、imageを個別に再列挙し、共有参照とretention条件を確認してから扱う。
+- **次回確認日**：要確認
+
 ## 9. 要確認事項
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
@@ -325,6 +368,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 4. **ESC-006**：macOS の既定入力が BlackHole 16ch、Simulator 入力が BlackHole 2ch である不整合を確認し、テスト完了後に内蔵デバイスへ戻す。
 5. **ESC-007**：本日の開発終了時に Metro の LAN 待受を停止するか確認する。
 6. **ESC-011**：S6-01用の停止container 11個、保持volume 2個、関連image、一時ディレクトリ、SQL Editor autosave queryをいつ削除するか判断する。削除はすべて別承認とする。
+7. **ESC-012**：旧`Otokagami`の正しい既存Database passwordを確認して未完了backup/restoreを再開するか、別承認でpassword resetを行うか判断する。staging DB credential rotation、同一端末backupの第二保管先、停止container 22件・volume 4件・暗号化backupの保持期限も個別に判断する。
 
 ### 調査範囲と制限
 
@@ -340,3 +384,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-07 | ESC-011 | Codex | Supabase CLI 2.112.0、local migration/Seed/RLS、停止container 11個、保持volume 2個、Colima稼働、両Hosted projectのread-only inventoryとbackup/PITR未契約を確認。削除・Hosted変更は未実施。 |
 | 2026-08-07 | ESC-001〜ESC-003 | Codex | Vercel APIの公開到達、ReadyなProduction deployment、`otokagami-staging`へのrouting、ローカルVercel CLIが未ログインであることを確認。Sensitive値と秘密は取得・記録していない。 |
 | 2026-08-08 | ESC-004 | Codex | TestFlight 0.1.1 (8)の実機起動直後、`otokagami-staging`に新規Auth log 2件、`Otokagami`に0件を確認。Build 1・8・9の接続先をすべて`otokagami-staging`と確定した。 |
+| 2026-08-09 | ESC-012 | Codex | `otokagami-staging`のAES暗号化論理backup、独立local restore、Hosted前後件数、Auth/public data、RLS、checksum 48件を検証。旧`Otokagami`は既存DB password認証失敗で未完了のためS6-02全体を`PARTIAL`とした。22 container停止、4 volume保持、sparsebundle unmountを確認。Hosted write・外部設定変更・削除はなし。 |
