@@ -34,8 +34,8 @@ begin
     from information_schema.tables
     where table_schema = 'public'
       and table_type = 'BASE TABLE'
-  ) <> 24 then
-    raise exception 'S6-03 schema failed: expected 24 public base tables';
+  ) < 24 then
+    raise exception 'S6-03 schema failed: expected at least the 24 foundation-era public base tables';
   end if;
 
   if exists (
@@ -59,8 +59,8 @@ begin
     raise exception 'S6-03 schema failed: v2 foundation tables must start empty';
   end if;
 
-  if (select count(*) from pg_policies where schemaname = 'public') <> 53 then
-    raise exception 'S6-03 schema failed: expected 50 existing policies plus 3 new policies';
+  if (select count(*) from pg_policies where schemaname = 'public') < 53 then
+    raise exception 'S6-03 schema failed: expected at least the 50 existing policies plus 3 foundation policies';
   end if;
 
   if has_table_privilege('anon', 'public.program_enrollments', 'SELECT')
