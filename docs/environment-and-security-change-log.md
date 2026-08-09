@@ -391,6 +391,33 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **停止・削除・復旧手順**：24 containerは停止済み。削除は今回実施していない。削除する場合はS6-03識別子、4 volume、3一時ディレクトリを再列挙し、S6-01／S6-02資源との共有がないことを確認して別承認を得る。migration適用後のrollbackは新tableを未使用のまま保持し、v2 writeを有効化せずv1を継続する。新tableを即dropしない。
 - **次回確認日**：S6-04開始時
 
+## ESC-014：S6-04 v2学習schemaのlocal検証とstaging clone rehearsal
+
+- **分類**：ローカルDB migration・RLS・所有者整合性検証
+- **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、S6-04専用Fresh stack、S6-03 staging相当DB volumeの独立clone
+- **実施日時・最終確認日**：2026-08-09
+- **実施者**：ユーザー承認のもとCodex
+- **実施状況**：local実装・Fresh検証・最終staging clone rehearsal・承認済みHosted適用まで完了。v2 read/writeは未有効。
+- **ステータス**：一時的
+- **変更内容**：forward-only migration `20260809010000_add_v2_learning_schema.sql`（SHA-256 `90f6f594748e46b0911602e5d9b21f62f96aef561ea1a968f16a43efc5c64f51`）で、9つのv2学習概念と、reportの根拠を再現する最小2関連tableを追加した。既存S6-03 migrationは編集していない。既存行のINSERT、UPDATE、DELETE、backfill、drop、truncate、rename、Seed変更は含まない。
+- **追加対象**：`program_day_sessions`、`program_session_items`、`learning_attempts`、`learning_attempt_results`、`correction_cycles`、`focus_evidence`、`focus_states_v2`、`review_schedules`、`learning_reports`、`learning_report_evidence`、`learning_report_correction_cycles`。`program_enrollments`にはnullableな`first_valid_learning_attempt_id`、trial専用Program Day comment、所有者・有効attempt guardだけをforward追加した。
+- **権限境界**：全11 tableでRLSを有効化し、anon権限なし、authenticatedは本人rowのSELECTのみ、直接INSERT／UPDATE／DELETE不可、service roleだけがwrite可能とした。複合foreign keyとguardによりuser／session／item／attempt／evidenceの所有者不一致、無効attemptをretry元またはtrial開始根拠にする操作、guided retryのdurable evidence化を拒否する。
+- **Fresh検証**：project ID `otokagami-s604-fresh-20260809`、専用port `58320`〜`58329`で全migration、Seed、content Seed test、既存v1 RLS、S6-03 foundation、S6-04 schema／RLS testを実行した。public tableは24件から35件、policyは53件から64件となり、既存Seed件数を維持し、新11 tableとS6-03の3 tableは0件。Supabase DB lintはerror 0件。
+- **Upgrade rehearsal**：停止済みS6-03 staging相当DB volumeをread-only mountし、最終project ID `otokagami-s604-upgrade-final-20260809`、専用port `59420`〜`59429`の独立volumeへ複製した。pendingがS6-04 migration 1件だけであることを確認して適用した。元のS6-03 volume、S6-02証拠環境、Hosted DBは変更していない。
+- **Hosted適用**：ユーザーの直前承認後、SHA-256 `90f6f594748e46b0911602e5d9b21f62f96aef561ea1a968f16a43efc5c64f51`の`20260809010000_add_v2_learning_schema.sql`だけを、baseline guard・migration履歴・postconditionを含む単一transactionでHosted `otokagami-staging`へ適用した。最初のread-only preflight入力1回はSQL Editorの長文途中置換による構文解析エラーとなり、transaction開始前でDB変更はなかった。内容全体とhashを照合した後の適用は成功した。
+- **Hosted適用後照合**：read-only transactionでAuth user 23件、既存24 tableの全件数、既存53 policyのdefinition digest `8fb4bff0491f27031767504bd990f513`が適用前と一致した。public tableは35件、policyは64件となり、新11 tableはすべて0件。新11 tableのRLS、authenticatedのread-only grant、authenticated write grant 0件、anon grant 0件、service-role write境界、11 policy、4 guard function、9 trigger、15 explicit index、nullableな初回有効attempt参照を確認した。migration履歴には`20260809010000`だけが追加された。
+- **v1確認**：Vercel Production APIの`/api/health`は200かつ`status=ok`。未認証の`/api/access-status`とPOST `/api/bootstrap`は401を維持した。認証済み実機経路はStage 7の受入へ統合し、解決済みとは扱わない。
+- **Local clone前後照合結果**：Auth user 23件、既存public 24 tableの全件数、既存53 policy digest、S6-04追加対象を除く既存column／constraint digest、orphan／duplicate／status品質集計が前後一致した。既存policy digestは`2e1df26d599809e7029aafeaef2b10f7`、既存column digestは`abecf0992ff92493a1feafab1247d3d3`、既存constraint digestは`d989666303d997ba177f997bdd5f35b2`で不変。新11 tableは0件で、migration履歴へ`20260809010000`だけが増えた。
+- **回帰結果**：API lint・39 test、Core lint・13 test・build、Mobile lint・26 test・public config buildに成功。repository通常API buildは既知のmacOS quarantine付きnative addon待機でbounded中断し、S6-03の同一API sourceである隔離clone（source差分0件）では18 routeのbuildに成功した。通常API buildの問題は解決済みとは扱わない。
+- **Docker復旧**：3つのS6-04 stackが同時起動した際、4GiBのColima VMでDocker daemonが無応答となった。container／volumeを削除せずColimaをforce stop後に同じinstanceで再起動し、検証済みFresh／中間upgrade stackを停止して最終cloneだけで照合を完了した。ColimaのCPU／memory／disk設定、image、volume、外部設定は変更していない。
+- **保持中resource**：S6-04識別子のcontainer 33件はすべて停止。DB volumeはFresh約86.49MB、中間upgrade約124.7MB、最終upgrade約124.3MB、Storage volume 3件は各0Bで、合計6 volumeを保持している。関連一時ディレクトリは`/private/tmp/otokagami-s604-fresh-20260809.O4iirZ`、`/private/tmp/otokagami-s604-upgrade-20260809.rycVDy`、`/private/tmp/otokagami-s604-upgrade-final-20260809.8CKUFt`。初回copy containerのentrypoint不備による失敗1件と、中間rehearsal資源も削除せず保持した。
+- **接続境界**：承認済みS6-04 migrationだけをHosted `otokagami-staging`へ適用した。v2 API、Mobile、planner、状態遷移計算、capability、read/write有効化は未実装・未有効。旧`Otokagami` Hosted projectへ接続・変更していない。Hosted Seed、reset、backfill、既存行更新、既存policy変更、RevenueCat、Azure、EAS、TestFlight、App Store、Production deploymentは行っていない。SQL Editorのprivate autosave queryは秘密を含まないpreflight／migration／postflight内容へ更新され、削除していない。
+- **想定されるリスク**：停止container／volume／一時ディレクトリによるディスク消費、複数Supabase stack同時起動によるColima 4GiB環境の過負荷、通常API buildのquarantine問題、S6-03残件、Hosted上の新schemaが後続実装まで未使用であること。
+- **リスクレベル**：中
+- **状態確認方法**：cleanup識別子で絞った`docker ps -a`、`docker volume ls`、`docker system df -v`、migration SHA-256、Supabase migration list、DB test、Git diffを使用する。複数stackを同時起動せず、対象project IDと専用portを事前確認する。
+- **停止・削除・復旧手順**：全S6-04 containerは停止済み。削除は今回実施していない。削除する場合は33 container、6 volume、3一時ディレクトリを再列挙し、S6-01〜S6-03資源との共有がないことを確認して別承認を得る。Hosted適用後のrollbackは新schemaを未使用のまま保持し、v2をoff、v1を継続する。新tableを即dropしない。
+- **次回確認日**：S6-05開始前
+
 ## 9. 要確認事項
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
@@ -401,6 +428,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 6. **ESC-011**：S6-01用の停止container 11個、保持volume 2個、関連image、一時ディレクトリ、SQL Editor autosave queryをいつ削除するか判断する。削除はすべて別承認とする。
 7. **ESC-012**：S6-03の高速化方針により、現時点ではstaging DB password rotation、第二backup、Hosted有料backup/PITRを行わない。停止container 22件・volume 4件・暗号化backupは既定のretentionに従って保持し、削除は別承認とする。
 8. **ESC-013**：`otokagami-staging`への承認済み2 migration適用と前後照合は完了した。v2 read/writeは未有効。S6-03の停止container 24件・volume 4件・一時ディレクトリ3件の削除は別承認とする。
+9. **ESC-014**：S6-04 local／staging clone検証と承認済みHosted適用は完了し、v2 read/writeは未有効。S6-04の停止container 33件・volume 6件・一時ディレクトリ3件の削除は別承認とする。複数stackの同時起動はColima過負荷を避ける。
 
 ### 調査範囲と制限
 
@@ -420,3 +448,5 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-09 | ESC-012 | Codex | 旧`Otokagami`の既存DB passwordを人間が安全入力して再開。read-only backup、独立local restore、Hosted前後件数、Auth/public data、RLS、管理schema差を検証し、両project合計checksum 92件を再確認してS6-02を`COMPLETE`へ更新した。22 container停止、4 volume保持、sparsebundle unmount、Hosted write・外部設定変更・削除なしを再確認。 |
 | 2026-08-09 | ESC-013 | Codex | `ja_difficulty`互換migrationとv2基礎schemaを実装。Fresh reset／Seed／既存・新RLS testと、S6-02 staging restoreの独立clone upgradeを完了し、Auth・既存行・既存policy等の不変、新3 table 0件、24 container停止・4 volume保持、Hosted未変更を確認。 |
 | 2026-08-09 | ESC-013 | Codex | 明示承認後、確定hashの2 migrationだけをHosted `otokagami-staging`へ適用。Auth 23件と既存21 table件数不変、新3 table 0件、既存policy digest一致、v1 health正常、v2 read/write未有効、旧`Otokagami`未操作を確認。 |
+| 2026-08-09 | ESC-014 | Codex | S6-04 v2学習schemaをforward-only実装。Fresh reset／Seed／既存・新RLS testとS6-03 staging相当DBの独立clone upgradeを完了し、Auth 23件、既存24 table件数、既存53 policy・column・constraint digest、品質集計の不変、新11 table 0件、Hosted未変更を確認。 |
+| 2026-08-09 | ESC-014 | Codex | 明示承認後、確定hashのS6-04 migrationだけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存24 table全件数、既存53 policy digestの不変、新11 table 0件、RLS・grant・guard、v1 healthと未認証拒否、v2 read/write未有効、旧`Otokagami`未操作を確認。 |
