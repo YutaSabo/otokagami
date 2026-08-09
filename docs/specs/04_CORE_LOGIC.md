@@ -51,6 +51,8 @@
 
 同じ課題IDを必須枠内で重複させない。課題不足時に未レビュー課題を有効化してはならない。
 
+Review Due Dateが到来した復習候補がない日は、5番目のreview枠を空欄にせず、同じ焦点音・同じcontent versionの未使用課題で置換する。置換順は`transfer_word`、`sentence`、`practical_sentence`とし、置換理由を日次プランへ残す。active、発音指導者レビュー済み、Azure検証済みの候補だけを使用し、置換後も必須5課題内で同じ`practice_item_key`を重複させない。候補がなければ未レビュー教材や別versionで補わず、`insufficient_content`として扱う。
+
 ### 短縮
 
 アンカーと、異なる課題役割の無補助attemptがともに良好と判断できる場合、必須課題を3件程度へ短縮できる。良好判定のしきい値は`MVP初期値`として別途決め、焦点音別の実機検証で調整する。

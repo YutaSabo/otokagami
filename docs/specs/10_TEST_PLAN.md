@@ -87,6 +87,8 @@ P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしな�
 
 - 5つの役割がそろう。
 - review枠に期限到来/期限超過を最大1件入れる。
+- 復習候補がない日は、同一焦点・同一content versionの未使用課題を`transfer_word`、`sentence`、`practical_sentence`の順でreview枠へ置換し、理由を保持する。
+- review枠の置換候補もactive・発音指導者レビュー済み・Azure検証済みに限定し、候補不足時は`insufficient_content`になる。
 - 同一課題を必須枠で重複させない。
 - activeかつversion整合する課題だけを選ぶ。
 - 国籍・母語でスコアや共通優先度を補正しない。
