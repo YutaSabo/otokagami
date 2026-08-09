@@ -71,6 +71,7 @@
 - 初期localeは`en-US`。
 - Subscription Keyをレスポンスやログへ含めない。
 - token、region、expires at、refresh timing、capabilitiesを返す。
+- 同時に、本人の管理session itemへ固定したone-time assessment ticketとserver nonceを返す。token、nonce、ticketをDBログやエラーへ出さない。
 - クライアントは失効前に更新する。
 - tokenの実TTLはAzure仕様と実装で確認し、文書例から発明しない。
 
@@ -79,12 +80,10 @@
 ### クライアントから送るもの
 
 - `client_attempt_id`
-- session / item / practice item / content version
-- attempt roleとretry relation
-- Calendar Date / timezone
+- session item ID
+- assessment ticket ID / nonce
+- deletion epoch
 - Azure最終結果JSON
-- 音声内容を含まない性能・品質メタデータ
-- app/version情報
 
 送らないもの:
 
@@ -97,10 +96,13 @@
 1. 認証とアクセス権。
 2. session/itemの所有権と現在状態。
 3. content version、reference text、assessment locale。
-4. payloadサイズ・型・必須Azure項目。
-5. 音声品質・課題一致・対象音の存在。
-6. client attempt IDの重複・payload競合。
-7. attempt roleとadvice提示履歴の整合。
+4. one-time ticketのuser/session/item/content/reference/target/focus/locale/purpose/epoch/期限/nonce。
+5. parse前request上限と、strict allowlistによるpayloadサイズ・型・必須Azure項目。
+6. `RecognitionStatus=Success`、参照文、target locator、対象音、score型と範囲。
+7. client attempt IDの重複・canonical payload競合。deletion epochをreplayより先に確認する。
+8. attempt roleとretry relationをclient入力ではなくticketとserver状態から導出する。
+
+client経由のAzure結果は`server_normalized`と表現し、`provider_attested`とは表現しない。App Attestは将来追加できるcapability境界だけを残し、MVP必須依存にしない。
 
 ## 8. 主要結果と保存の分離
 

@@ -1,4 +1,5 @@
 export type ScoreColor = "green" | "yellow" | "red";
+export * as v2 from "./v2/index.js";
 export type ItemType = "word" | "sentence";
 export type SlotType = "weak" | "new" | "review";
 

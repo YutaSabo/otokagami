@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET(
   _request: Request,
-  context: { params: Promise<{ cache_key: string }> | { cache_key: string } }
+  context: { params: Promise<{ cache_key: string }> }
 ) {
   return route(async () => {
     const params = await context.params;

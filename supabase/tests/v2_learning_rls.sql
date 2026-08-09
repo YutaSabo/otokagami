@@ -404,7 +404,10 @@ insert into public.learning_attempts (
   provider,
   assessment_locale,
   provider_version,
-  normalizer_version
+  normalizer_version,
+  server_verified,
+  normalization_status,
+  provider_attested
 )
 values
   (
@@ -431,7 +434,10 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true,
+    'server_normalized',
+    false
   ),
   (
     'a7777777-7777-7777-7777-777777777771',
@@ -448,7 +454,7 @@ values
     'a7777777-7777-7777-7777-777777777770',
     2,
     2,
-    now(),
+    clock_timestamp() + interval '1 second',
     current_date,
     'Asia/Tokyo',
     true,
@@ -457,7 +463,10 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true,
+    'server_normalized',
+    false
   ),
   (
     'a7777777-7777-7777-7777-777777777772',
@@ -483,7 +492,10 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true,
+    'rejected',
+    false
   ),
   (
     'a7777777-7777-7777-7777-777777777773',
@@ -509,7 +521,10 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true,
+    'server_normalized',
+    false
   ),
   (
     'b7777777-7777-7777-7777-777777777770',
@@ -535,7 +550,10 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true,
+    'server_normalized',
+    false
   );
 
 do $$
@@ -640,7 +658,7 @@ begin
   exception
     when check_violation then null;
     when raise_exception then
-      if sqlerrm <> 'Guided retry must reference a valid unassisted attempt for the same owner and item' then
+      if sqlerrm not in ('GUIDED_RETRY_SOURCE_INVALID', 'V2_GUIDED_SOURCE_INVALID') then
         raise;
       end if;
   end;
@@ -663,8 +681,8 @@ begin
       'azure', 'en-US', 'normalizer-v2'
     );
     raise exception 'guided retry failed: technically invalid retry source was accepted';
-  exception when raise_exception then
-    if sqlerrm <> 'Guided retry must reference a valid unassisted attempt for the same owner and item' then
+  exception when check_violation then
+    if sqlerrm not in ('GUIDED_RETRY_SOURCE_INVALID', 'V2_GUIDED_SOURCE_INVALID') then
       raise;
     end if;
   end;
@@ -763,7 +781,8 @@ insert into public.focus_evidence (
   prompt_context,
   assisted,
   content_version_id,
-  server_verified
+  server_verified,
+  normalization_status
 )
 values
   (
@@ -778,7 +797,8 @@ values
     'word',
     false,
     'c3333333-3333-3333-3333-333333333333',
-    true
+    true,
+    'server_normalized'
   ),
   (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',
@@ -792,7 +812,8 @@ values
     'guided word retry',
     true,
     'c3333333-3333-3333-3333-333333333333',
-    true
+    true,
+    'server_normalized'
   ),
   (
     'baaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0',
@@ -806,7 +827,8 @@ values
     'word',
     false,
     'c3333333-3333-3333-3333-333333333333',
-    true
+    true,
+    'server_normalized'
   );
 
 do $$
@@ -815,16 +837,19 @@ begin
     insert into public.focus_evidence (
       user_id, focus_group_key, evidence_kind, source_attempt_id,
       evidence_calendar_date, prompt_role, prompt_context, assisted,
-      content_version_id, server_verified
+      content_version_id, server_verified, normalization_status
     ) values (
       'a1111111-1111-1111-1111-111111111111', 'r-l', 'held',
       'a7777777-7777-7777-7777-777777777771', current_date + 1,
       'anchor', 'word', false,
-      'c3333333-3333-3333-3333-333333333333', true
+      'c3333333-3333-3333-3333-333333333333', true, 'server_normalized'
     );
     raise exception 'evidence guard failed: guided retry became durable evidence';
-  exception when raise_exception then
-    if sqlerrm <> 'Durable evidence must use a valid unassisted attempt for the same owner, focus, and prompt role' then
+  exception when check_violation or raise_exception then
+    if sqlerrm not in (
+      'Durable evidence must use a valid server-verified unassisted attempt for the same owner, focus, and prompt role',
+      'V2_DURABLE_EVIDENCE_INVALID'
+    ) then
       raise;
     end if;
   end;
@@ -833,12 +858,12 @@ begin
     insert into public.focus_evidence (
       user_id, focus_group_key, evidence_kind, source_attempt_id,
       evidence_calendar_date, prompt_role, prompt_context, assisted,
-      content_version_id, server_verified
+      content_version_id, server_verified, normalization_status
     ) values (
       'a1111111-1111-1111-1111-111111111111', 'r-l', 'discovered',
       'a7777777-7777-7777-7777-777777777770', current_date,
       'anchor', 'duplicate', false,
-      'c3333333-3333-3333-3333-333333333333', true
+      'c3333333-3333-3333-3333-333333333333', true, 'server_normalized'
     );
     raise exception 'evidence uniqueness failed: duplicate durable evidence inserted';
   exception when unique_violation then null;
@@ -1013,11 +1038,15 @@ begin
       'a1111111-1111-1111-1111-111111111111'
     );
     raise exception 'ownership failed: cross-user report evidence inserted';
-  exception when foreign_key_violation then null;
+  exception
+    when foreign_key_violation then null;
+    when check_violation then
+      if sqlerrm not in ('UNVERIFIED_EVIDENCE_DERIVATION_REJECTED', 'UNNORMALIZED_EVIDENCE_DERIVATION_REJECTED') then raise; end if;
   end;
 end;
 $$;
 
+select set_config('app.v2_trusted_command', 'on', true);
 update public.program_session_items
 set selected_before_attempt_id = 'a7777777-7777-7777-7777-777777777770',
     selected_after_attempt_id = 'a7777777-7777-7777-7777-777777777771'
@@ -1031,7 +1060,10 @@ begin
     where user_id = 'a1111111-1111-1111-1111-111111111111';
     raise exception 'enrollment guard failed: technically invalid first attempt was accepted';
   exception when raise_exception then
-    if sqlerrm <> 'Enrollment first learning attempt must be valid and owned by the enrolled user' then
+    if sqlerrm not in (
+      'Enrollment first learning attempt must be valid, server-verified, and owned by the enrolled user',
+      'Enrollment first learning attempt must be valid, server-normalized, and owned by the enrolled user'
+    ) then
       raise;
     end if;
   end;
@@ -1041,6 +1073,7 @@ $$;
 update public.program_enrollments
 set first_valid_learning_attempt_id = 'a7777777-7777-7777-7777-777777777770'
 where user_id = 'a1111111-1111-1111-1111-111111111111';
+select set_config('app.v2_trusted_command', 'off', true);
 
 reset role;
 set local role authenticated;

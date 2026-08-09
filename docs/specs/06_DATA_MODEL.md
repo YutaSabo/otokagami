@@ -131,6 +131,9 @@ Content Version
 - 対象音の正規化結果
 - 必要に応じた詳細結果。音声本体を含めない
 - persistence state / created timestamps
+- assessment ticket ID、canonical payload SHA-256
+- normalization status: `server_normalized` / `rejected`
+- provider attestation: MVPのclient経由Azure結果では常にfalse
 
 ### 無効attempt
 
@@ -139,6 +142,10 @@ Content Version
 ### 再送
 
 同一userと`client_attempt_id`の再送は同じ結果を返し、新規attempt、Program Day、durable証拠を作らない。payloadが異なる場合は競合として拒否する。
+
+### Assessment ticket
+
+one-time ticketはuser、session、session item、content version、practice item stable key、参照文hash/version、target locator、focus group、`en-US`、attempt purpose、deletion epoch、発行/失効時刻、server nonce hashへ固定する。Azure token、音声、端末URI、秘密を保存しない。同じitemで未消費ticketは最大1件とし、attempt保存transactionで検証・消費する。
 
 ## 7. 正規化された判定結果
 
@@ -180,7 +187,8 @@ Azureの値がない場合、0や空文字で捏造せずnullとcapabilityで表
 - prompt role / context
 - assistedか
 - content/advice version
-- server-verified status
+- normalization status（`server_normalized`だけを候補にできる）
+- provider attestation status（MVPではfalse）
 
 durable証拠には一意制約相当の重複防止が必要である。
 
@@ -189,6 +197,8 @@ user + calendar_date + focus_group + prompt_role + evidence_kind
 ```
 
 具体的なDB制約・集計方式はTBD。
+
+`server_normalized`はtrusted APIが管理課題snapshotに対してstrict validationした意味であり、Azureから直接署名された意味ではない。policy未設定中はdurable evidenceを作成しない。
 
 Focus stateは、現在段階、最後の無補助成功日、次の課題役割、Review Due Date、メンテナンス状態を表す。逐次EWMAの単独値だけを定着の正本にしない。
 
