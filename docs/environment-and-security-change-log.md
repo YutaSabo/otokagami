@@ -63,6 +63,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | ESC-010 | ローカル開発ツール | fastlane 2.237.0をHomebrewで導入 | macOS | 有効・必要 | 低 | TestFlightローカルビルド運用終了時に削除可否を判断 | 2026-07-13 |
 | ESC-011 | ローカルDB検証・外部棚卸し | Supabase CLI導入、使い捨てlocal stack、Hosted read-only inventory | macOS / Docker / Supabase | 一時的 | 中 | 保持資源の停止状態と削除要否を再確認 | 2026-08-07 |
 | ESC-012 | 暗号化バックアップ・ローカル復元 | S6-02 Hosted論理バックアップと独立local restore | macOS / Docker / Supabase | 一時的・COMPLETE | 中 | 保持期限、第二backup、管理schema差とcredential rotation要否を個別判断 | 2026-08-09 |
+| ESC-015 | ローカルDB・API境界検証 | S6-05〜07 Core/API v2・transactional RPCのFresh／clone検証 | Docker / Supabase local / API workspace | 一時的・Hosted承認待ち | 中 | 確定migrationのHosted適用は直前承認後に行う | 2026-08-09 |
 
 ## 8. 個別変更記録
 
@@ -418,6 +419,25 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **停止・削除・復旧手順**：全S6-04 containerは停止済み。削除は今回実施していない。削除する場合は33 container、6 volume、3一時ディレクトリを再列挙し、S6-01〜S6-03資源との共有がないことを確認して別承認を得る。Hosted適用後のrollbackは新schemaを未使用のまま保持し、v2をoff、v1を継続する。新tableを即dropしない。
 - **次回確認日**：S6-05開始前
 
+## ESC-015：S6-05〜07 Core/API v2とtrusted transaction境界のlocal検証
+
+- **分類**：ローカルDB migration・RPC・RLS・API統合検証
+- **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、S6-05〜07専用Fresh stack、S6-04 staging相当DB volumeの独立clone、通常npm workspace
+- **実施日時・最終確認日**：2026-08-09
+- **実施者**：ユーザー承認のもとCodex
+- **実施状況**：local実装、Fresh検証、最終staging clone rehearsalまで完了。Hosted migrationは未適用、v2 modeは既定`off`。
+- **変更内容**：forward-only migration `20260809020000_add_v2_runtime_boundary.sql`でv2 managed item snapshot、server-verified attempt、immutable／JSON allowlist guard、service-role専用の日次session作成・attempt保存・Program Day完了RPCを追加した。既存行のDML、drop、truncate、rename、backfill、Seed変更は含まない。Core v2は正式なESM runtime packageとしてemitし、新規`/api/v2`はserver-only `OTOKAGAMI_V2_MODE`未設定時にfail closedする。
+- **Fresh検証**：project ID `otokagami-s607-fresh-20260809`、専用port `59320`〜`59329`で全migration、Seed、content Seed、既存v1 RLS、S6-03／04、S6-05〜07 schema／RLS／RPC testを実行した。attempt同時再送2件はcanonical attempt／result各1件へ収束し、Supabase DB lintはerror 0件。
+- **Upgrade rehearsal**：停止済みS6-04 staging相当DB volumeをread-only sourceとして、承認候補の最終clone `supabase_db_otokagami-s607-upgrade-approval-20260809`（port `59542`）へ複製し、対象migration 1件だけを単一transactionで適用した。Auth 23件、既存public 35 tableの全件数、64 policyのdefinition digest、orphan集計は前後一致し、新v2 rowは0件、migration ledgerのlatestは`20260809020000`となった。中間clone `supabase_db_otokagami-s607-upgrade-20260809`と先行最終clone`supabase_db_otokagami-s607-upgrade-final-20260809`も証拠として保持する。
+- **回帰結果**：Core lint・44 test・build・Node ESM import、API lint・50 test・通常workspaceでのNext.js production build、Mobile lint・26 test・public config buildに成功した。Next.jsは公式WASM fallbackを使用する`--webpack` buildで、隔離cloneやquarantine属性変更を必要としなかった。root checkは同じCore/API/Mobile成功後、既知のPython inference unittest停止をboundedに終了したため全体成功とは扱わない。inference lint／buildは成功した。
+- **保持中resource**：S6-07識別子のcontainer 15件をすべて停止状態で保持する。volumeはFresh DB約80.72MB、Storage 0B、中間clone DB約124.3MB、先行最終clone DB約124.3MB、承認候補clone DB約124.3MBの5件。Fresh stackの主要container論理書込はRealtime約10.4MB、その他は小容量。最終clone作成時に`alpine:3.22` imageを取得した。関連資源は削除していない。
+- **接続境界**：Hosted Supabase、旧`Otokagami`、Vercel環境変数、Azure、RevenueCat、EAS、TestFlight、App Store、Productionは変更していない。migration後もv2 modeを`off`のまま維持する計画で、Hosted適用は確定hash提示後の別承認対象。
+- **想定されるリスク**：停止container／volume／imageによるディスク消費、Python旧inference test停止、v2公開教材と製品policyが未設定のため学習経路をまだ有効化できないこと。複数Supabase stackの同時起動はColima 4GiB環境の過負荷につながる。
+- **リスクレベル**：中
+- **状態確認方法**：`docker ps -a`、`docker volume ls`、`docker system df -v`をS6-07識別子で絞り、migration SHA-256、Fresh／clone DB test、Core/API/Mobile check、Git diffを確認する。
+- **停止・削除・復旧手順**：S6-07 containerは停止済み。削除は実施していない。削除時は15 container、5 volume、関連一時ディレクトリとimage共有関係を再列挙し、別承認を得る。Hosted適用後のrollbackはv2 modeを`off`に保ち、新objectを未使用のまま残してv1を継続し、即dropしない。
+- **次回確認日**：Hosted migration直前承認時
+
 ## 9. 要確認事項
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
@@ -429,6 +449,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 7. **ESC-012**：S6-03の高速化方針により、現時点ではstaging DB password rotation、第二backup、Hosted有料backup/PITRを行わない。停止container 22件・volume 4件・暗号化backupは既定のretentionに従って保持し、削除は別承認とする。
 8. **ESC-013**：`otokagami-staging`への承認済み2 migration適用と前後照合は完了した。v2 read/writeは未有効。S6-03の停止container 24件・volume 4件・一時ディレクトリ3件の削除は別承認とする。
 9. **ESC-014**：S6-04 local／staging clone検証と承認済みHosted適用は完了し、v2 read/writeは未有効。S6-04の停止container 33件・volume 6件・一時ディレクトリ3件の削除は別承認とする。複数stackの同時起動はColima過負荷を避ける。
+10. **ESC-015**：S6-05〜07のlocal／staging clone検証は完了し、Hosted migrationとv2有効化は未実施。停止container 15件、volume 5件、関連image・一時ディレクトリは保持し、削除は別承認とする。
 
 ### 調査範囲と制限
 
@@ -450,3 +471,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-09 | ESC-013 | Codex | 明示承認後、確定hashの2 migrationだけをHosted `otokagami-staging`へ適用。Auth 23件と既存21 table件数不変、新3 table 0件、既存policy digest一致、v1 health正常、v2 read/write未有効、旧`Otokagami`未操作を確認。 |
 | 2026-08-09 | ESC-014 | Codex | S6-04 v2学習schemaをforward-only実装。Fresh reset／Seed／既存・新RLS testとS6-03 staging相当DBの独立clone upgradeを完了し、Auth 23件、既存24 table件数、既存53 policy・column・constraint digest、品質集計の不変、新11 table 0件、Hosted未変更を確認。 |
 | 2026-08-09 | ESC-014 | Codex | 明示承認後、確定hashのS6-04 migrationだけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存24 table全件数、既存53 policy digestの不変、新11 table 0件、RLS・grant・guard、v1 healthと未認証拒否、v2 read/write未有効、旧`Otokagami`未操作を確認。 |
+| 2026-08-09 | ESC-015 | Codex | S6-05安全修正、Core ESM runtime、8本の`/api/v2`、service-role専用RPCを実装。Fresh reset／Seed／既存・新RLS・RPC・並行再送と、S6-04 staging相当DBの独立clone upgradeを完了し、Auth 23件、既存35 table全件数、64 policy digestの不変、新v2 row 0件、container停止・volume保持、Hosted未変更を確認。 |

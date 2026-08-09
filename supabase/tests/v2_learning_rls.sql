@@ -404,7 +404,8 @@ insert into public.learning_attempts (
   provider,
   assessment_locale,
   provider_version,
-  normalizer_version
+  normalizer_version,
+  server_verified
 )
 values
   (
@@ -431,7 +432,8 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true
   ),
   (
     'a7777777-7777-7777-7777-777777777771',
@@ -457,7 +459,8 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true
   ),
   (
     'a7777777-7777-7777-7777-777777777772',
@@ -483,7 +486,8 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true
   ),
   (
     'a7777777-7777-7777-7777-777777777773',
@@ -509,7 +513,8 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true
   ),
   (
     'b7777777-7777-7777-7777-777777777770',
@@ -535,7 +540,8 @@ values
     'azure',
     'en-US',
     'speech-sdk-test',
-    'normalizer-v2'
+    'normalizer-v2',
+    true
   );
 
 do $$
@@ -640,7 +646,7 @@ begin
   exception
     when check_violation then null;
     when raise_exception then
-      if sqlerrm <> 'Guided retry must reference a valid unassisted attempt for the same owner and item' then
+      if sqlerrm <> 'GUIDED_RETRY_SOURCE_INVALID' then
         raise;
       end if;
   end;
@@ -663,8 +669,8 @@ begin
       'azure', 'en-US', 'normalizer-v2'
     );
     raise exception 'guided retry failed: technically invalid retry source was accepted';
-  exception when raise_exception then
-    if sqlerrm <> 'Guided retry must reference a valid unassisted attempt for the same owner and item' then
+  exception when check_violation then
+    if sqlerrm <> 'GUIDED_RETRY_SOURCE_INVALID' then
       raise;
     end if;
   end;
@@ -824,7 +830,7 @@ begin
     );
     raise exception 'evidence guard failed: guided retry became durable evidence';
   exception when raise_exception then
-    if sqlerrm <> 'Durable evidence must use a valid unassisted attempt for the same owner, focus, and prompt role' then
+    if sqlerrm <> 'Durable evidence must use a valid server-verified unassisted attempt for the same owner, focus, and prompt role' then
       raise;
     end if;
   end;
@@ -1013,7 +1019,10 @@ begin
       'a1111111-1111-1111-1111-111111111111'
     );
     raise exception 'ownership failed: cross-user report evidence inserted';
-  exception when foreign_key_violation then null;
+  exception
+    when foreign_key_violation then null;
+    when check_violation then
+      if sqlerrm <> 'UNVERIFIED_EVIDENCE_DERIVATION_REJECTED' then raise; end if;
   end;
 end;
 $$;
@@ -1031,7 +1040,7 @@ begin
     where user_id = 'a1111111-1111-1111-1111-111111111111';
     raise exception 'enrollment guard failed: technically invalid first attempt was accepted';
   exception when raise_exception then
-    if sqlerrm <> 'Enrollment first learning attempt must be valid and owned by the enrolled user' then
+    if sqlerrm <> 'Enrollment first learning attempt must be valid, server-verified, and owned by the enrolled user' then
       raise;
     end if;
   end;
