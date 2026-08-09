@@ -1,13 +1,18 @@
 import { selectCountedAttempts } from "./attempts.js";
-import type { CompletionItem, DateOnly, LearningAttempt } from "./types.js";
+import { assertDateOnly, assertIanaTimeZone, assertUuid } from "./dates.js";
+import { evaluateShortening } from "./planner.js";
+import type { CompletionItem, DailyPlan, DateOnly, LearningAttempt, LearningPolicy } from "./types.js";
 
 export function evaluateSessionCompletion(input: {
   idempotencyKey: string;
   calendarDate: DateOnly;
-  requiredCount: number;
+  sessionId: string;
+  sessionTimezone: string;
+  plan: DailyPlan;
   items: readonly CompletionItem[];
   attempts: readonly LearningAttempt[];
   priorCompletedCalendarDates: readonly DateOnly[];
+  shorteningPolicy?: LearningPolicy;
 }):
   | {
       status: "eligible";
@@ -16,8 +21,12 @@ export function evaluateSessionCompletion(input: {
       completedRequiredCount: number;
     }
   | { status: "ineligible"; idempotencyKey: string; reason: string } {
-  if (input.requiredCount !== 3 && input.requiredCount !== 5) {
-    return ineligible(input.idempotencyKey, "required_count_must_be_three_or_five");
+  try {
+    assertUuid(input.idempotencyKey, "idempotencyKey");
+    assertDateOnly(input.calendarDate);
+    assertIanaTimeZone(input.sessionTimezone);
+  } catch {
+    return ineligible(input.idempotencyKey, "invalid_completion_boundary");
   }
   if (input.priorCompletedCalendarDates.includes(input.calendarDate)) {
     return ineligible(input.idempotencyKey, "calendar_date_already_completed");
@@ -27,27 +36,28 @@ export function evaluateSessionCompletion(input: {
   if (required.length !== 5) {
     return ineligible(input.idempotencyKey, "plan_must_contain_exactly_five_required_items");
   }
-  const completed = required.filter((item) => {
-    if (input.requiredCount === 5) {
-      return (
-        item.completionReason === "completed" ||
-        item.completionReason === "substituted" ||
-        item.completionReason === "skipped_after_technical_failures"
-      );
-    }
-    return item.completionReason !== undefined;
+  const completed = required.filter((item) =>
+    item.completionReason === "completed" ||
+    item.completionReason === "substituted" ||
+    item.completionReason === "skipped_after_technical_failures"
+  );
+  const shortening = evaluateShortening({
+    plan: input.plan,
+    sessionId: input.sessionId,
+    completedRequiredItemKeys: completed.map((item) => item.practiceItemKey),
+    attempts: input.attempts,
+    policy: input.shorteningPolicy
   });
-  if (input.requiredCount === 5 && completed.length !== required.length) {
+  const effectiveRequiredCount = shortening.status === "shortened" ? 3 : 5;
+  if (effectiveRequiredCount === 5 && completed.length !== required.length) {
     return ineligible(input.idempotencyKey, "required_items_incomplete");
   }
-  if (input.requiredCount === 3) {
-    const activeCompleted = required.filter((item) => item.completionReason !== "shortened");
-    const shortened = required.filter((item) => item.completionReason === "shortened");
-    if (activeCompleted.length !== 3 || activeCompleted.some((item) => item.completionReason === undefined)) {
-      return ineligible(input.idempotencyKey, "short_plan_requires_exactly_three_completed_items");
-    }
-    if (required.length !== 3 + shortened.length) {
-      return ineligible(input.idempotencyKey, "short_plan_shape_invalid");
+  if (shortening.status === "shortened") {
+    if (
+      completed.length !== 3 ||
+      completed.some((item) => !shortening.keptPracticeItemKeys.includes(item.practiceItemKey))
+    ) {
+      return ineligible(input.idempotencyKey, "server_shortening_evidence_mismatch");
     }
   }
 
@@ -66,7 +76,7 @@ export function evaluateSessionCompletion(input: {
     status: "eligible",
     idempotencyKey: input.idempotencyKey,
     calendarDate: input.calendarDate,
-    completedRequiredCount: input.requiredCount
+    completedRequiredCount: effectiveRequiredCount
   };
 }
 

@@ -1,4 +1,4 @@
-import { compareAttempt } from "./attempts.js";
+import { compareAttempt, selectCountedAttempts } from "./attempts.js";
 import { addCalendarDays, compareDateOnly } from "./dates.js";
 import type {
   CorrectionCycle,
@@ -47,8 +47,7 @@ export function deriveFocusState(input: {
   }
 
   const exclusions: Array<{ evidenceId: string; reason: string }> = [];
-  const qualified: FocusEvidence[] = [];
-  let hasUnknown = false;
+  const safe: FocusEvidence[] = [];
   for (const evidence of relevant) {
     if (!evidence.serverVerified) {
       exclusions.push({ evidenceId: evidence.id, reason: "not_server_verified" });
@@ -62,10 +61,15 @@ export function deriveFocusState(input: {
       exclusions.push({ evidenceId: evidence.id, reason: "invalid_correction_cycle" });
       continue;
     }
+    safe.push(evidence);
+  }
+  const qualified: FocusEvidence[] = [];
+  let hasUnknown = false;
+  for (const evidence of safe) {
     const decision = input.policy.evaluateEvidence({
       targetState: evidence.kind,
       evidence,
-      allEvidence: relevant
+      allEvidence: safe
     });
     if (decision.status === "unknown") {
       hasUnknown = true;
@@ -108,6 +112,8 @@ export function deriveFocusState(input: {
     (evidence) =>
       evidence.kind === "transferred" &&
       discovery !== undefined &&
+      held !== undefined &&
+      compareEvidence(evidence, held) > 0 &&
       (evidence.promptRole !== discovery.promptRole || evidence.promptContext !== discovery.promptContext)
   );
   if (held !== undefined && transferred !== undefined) {
@@ -120,6 +126,8 @@ export function deriveFocusState(input: {
       evidence.kind === "stable" &&
       evidence.reviewIntervalKind === "day_7" &&
       discovery !== undefined &&
+      transferred !== undefined &&
+      compareEvidence(evidence, transferred) > 0 &&
       compareDateOnly(evidence.calendarDate, addCalendarDays(discovery.calendarDate, 7)) >= 0
   );
   if (
@@ -175,12 +183,18 @@ function isValidCycleEvidence(
 ): boolean {
   const cycle = input.correctionCycles.find((candidate) => candidate.id === evidence.correctionCycleId);
   if (cycle === undefined) return false;
-  const attempts = [...input.attempts].sort(compareAttempt);
+  const attempts = selectCountedAttempts(input.attempts).accepted.sort(compareAttempt);
   const before = attempts.find((attempt) => attempt.id === cycle.beforeAttemptId);
   const after = attempts.find((attempt) => attempt.id === cycle.afterAttemptId);
   return (
     before !== undefined &&
     after !== undefined &&
+    cycle.userId === evidence.userId &&
+    cycle.sessionId === before.sessionId &&
+    evidence.sessionItemId === cycle.sessionItemId &&
+    before.userId === after.userId &&
+    before.userId === evidence.userId &&
+    before.sessionId === after.sessionId &&
     before.serverVerified &&
     after.serverVerified &&
     before.technicalValidity === "valid" &&
@@ -191,7 +205,8 @@ function isValidCycleEvidence(
     after.retryFromAttemptId === before.id &&
     before.sessionItemId === after.sessionItemId &&
     before.focusGroupKey === after.focusGroupKey &&
-    evidence.focusGroupKey === cycle.focusGroupKey
+    evidence.focusGroupKey === cycle.focusGroupKey &&
+    cycle.focusGroupKey === before.focusGroupKey
   );
 }
 

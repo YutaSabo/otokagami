@@ -1,4 +1,5 @@
 import type { EvidenceKind, FocusEvidence, LearningAttempt, PromptRole } from "./types.js";
+import { assertDateOnly, assertIanaTimeZone, assertRfc3339Instant } from "./dates.js";
 
 export type AttemptExclusionReason =
   | "idempotency_payload_conflict"
@@ -8,6 +9,7 @@ export type AttemptExclusionReason =
   | "duplicate_valid_ordinal"
   | "guided_retry_missing_source"
   | "guided_retry_source_mismatch"
+  | "invalid_attempt_metadata"
   | "not_server_verified"
   | "assisted_not_durable"
   | "duplicate_durable_evidence";
@@ -42,8 +44,14 @@ export function selectCountedAttempts(attempts: readonly LearningAttempt[]): {
   }
 
   const accepted: LearningAttempt[] = [];
+  const acceptedUnassisted = new Map<string, LearningAttempt>();
   const ordinals = new Set<string>();
-  for (const attempt of candidates.sort(compareAttempt)) {
+  const orderedCandidates = candidates.sort(compareAttempt);
+  for (const attempt of orderedCandidates.filter((candidate) => candidate.attemptRole !== "guided_retry")) {
+    if (!hasValidAttemptMetadata(attempt)) {
+      excluded.push(exclusion(attempt, "invalid_attempt_metadata"));
+      continue;
+    }
     if (attempt.technicalValidity === "invalid") {
       excluded.push(exclusion(attempt, "technical_invalid"));
       continue;
@@ -62,22 +70,52 @@ export function selectCountedAttempts(attempts: readonly LearningAttempt[]): {
       excluded.push(exclusion(attempt, "duplicate_valid_ordinal"));
       continue;
     }
-    if (attempt.attemptRole === "guided_retry") {
-      if (attempt.retryFromAttemptId === undefined) {
-        excluded.push(exclusion(attempt, "guided_retry_missing_source"));
-        continue;
-      }
-      const source = candidates.find((candidate) => candidate.id === attempt.retryFromAttemptId);
-      if (
-        source === undefined ||
-        source.sessionItemId !== attempt.sessionItemId ||
-        source.focusGroupKey !== attempt.focusGroupKey ||
-        source.assisted ||
-        source.attemptRole === "guided_retry"
-      ) {
-        excluded.push(exclusion(attempt, "guided_retry_source_mismatch"));
-        continue;
-      }
+    ordinals.add(ordinalKey);
+    accepted.push(attempt);
+    if (!attempt.assisted && !attempt.coachingShown && attempt.serverVerified) {
+      acceptedUnassisted.set(attempt.id, attempt);
+    }
+  }
+
+  for (const attempt of orderedCandidates.filter((candidate) => candidate.attemptRole === "guided_retry")) {
+    if (!hasValidAttemptMetadata(attempt)) {
+      excluded.push(exclusion(attempt, "invalid_attempt_metadata"));
+      continue;
+    }
+    if (attempt.technicalValidity === "invalid") {
+      excluded.push(exclusion(attempt, "technical_invalid"));
+      continue;
+    }
+    if (
+      attempt.validAttemptOrdinal === undefined ||
+      !Number.isInteger(attempt.validAttemptOrdinal) ||
+      attempt.validAttemptOrdinal < 1 ||
+      attempt.validAttemptOrdinal > 3
+    ) {
+      excluded.push(exclusion(attempt, "invalid_valid_ordinal"));
+      continue;
+    }
+    if (attempt.retryFromAttemptId === undefined) {
+      excluded.push(exclusion(attempt, "guided_retry_missing_source"));
+      continue;
+    }
+    const source = acceptedUnassisted.get(attempt.retryFromAttemptId);
+    if (
+      source === undefined ||
+      source.userId !== attempt.userId ||
+      source.sessionId !== attempt.sessionId ||
+      source.sessionItemId !== attempt.sessionItemId ||
+      source.focusGroupKey !== attempt.focusGroupKey ||
+      source.technicalValidity !== "valid" ||
+      !source.serverVerified
+    ) {
+      excluded.push(exclusion(attempt, "guided_retry_source_mismatch"));
+      continue;
+    }
+    const ordinalKey = `${attempt.sessionItemId}:${attempt.validAttemptOrdinal}`;
+    if (ordinals.has(ordinalKey)) {
+      excluded.push(exclusion(attempt, "duplicate_valid_ordinal"));
+      continue;
     }
     ordinals.add(ordinalKey);
     accepted.push(attempt);
@@ -89,6 +127,17 @@ export function selectCountedAttempts(attempts: readonly LearningAttempt[]): {
       left.attemptId.localeCompare(right.attemptId) || left.reason.localeCompare(right.reason)
     )
   };
+}
+
+function hasValidAttemptMetadata(attempt: LearningAttempt): boolean {
+  try {
+    assertRfc3339Instant(attempt.attemptedAt);
+    assertDateOnly(attempt.calendarDate);
+    assertIanaTimeZone(attempt.timezone);
+    return attempt.userId.trim().length > 0 && attempt.sessionId.trim().length > 0 && attempt.sessionItemId.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export function selectDurableEvidenceCandidates(input: {

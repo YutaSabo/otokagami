@@ -4,12 +4,17 @@ import test from "node:test";
 import {
   addCalendarDays,
   calendarDateFromInstant,
+  canonicalPayloadSha256,
   createDailyPlan,
   createReviewScheduleCandidates,
   deriveFocusState,
   evaluateSessionCompletion,
   evaluateShortening,
   optionalExtensionsAvailable,
+  normalizeAzureFocusResult,
+  AZURE_V2_CAPACITY_REFERENCE,
+  AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES,
+  resumeProgramDayPlan,
   resolveProgramDayPlan,
   reviewStatusForDate,
   selectCountedAttempts,
@@ -31,6 +36,8 @@ import {
 
 const CONTENT_VERSION = "content-v1";
 const FOCUS = "r-l";
+const USER = "user-a";
+const COMPLETION_KEY = "11111111-1111-4111-8111-111111111111";
 
 test("date-only addition handles month, year and leap boundaries", () => {
   assert.equal(addCalendarDays("2024-02-28", 1), "2024-02-29");
@@ -46,7 +53,48 @@ test("Calendar Date uses explicit IANA timezone across DST and day boundaries", 
   assert.equal(calendarDateFromInstant("2026-08-01T15:30:00Z", "Asia/Tokyo"), "2026-08-02");
   assert.equal(calendarDateFromInstant("2026-08-01T15:30:00Z", "America/Los_Angeles"), "2026-08-01");
   assert.throws(() => calendarDateFromInstant("not-an-instant", "Asia/Tokyo"), RangeError);
+  assert.throws(() => calendarDateFromInstant("2026-02-30T00:00:00Z", "Asia/Tokyo"), RangeError);
+  assert.throws(() => calendarDateFromInstant("2026-08-01", "Asia/Tokyo"), RangeError);
   assert.throws(() => calendarDateFromInstant("2026-01-01T00:00:00Z", "Mars/Base"), RangeError);
+});
+
+test("v2 Azure normalizer emits only allowlisted focus fields with a fixture-derived byte limit", () => {
+  assert.equal(
+    AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES,
+    new TextEncoder().encode(JSON.stringify(AZURE_V2_CAPACITY_REFERENCE)).byteLength
+  );
+  const result = normalizeAzureFocusResult({
+    providerPayload: AZURE_V2_CAPACITY_REFERENCE,
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    nextActionKey: "tongue_forward",
+    assessmentLocale: "en-US"
+  });
+  assert.equal(result.observedCandidate, "s");
+  assert.equal(result.targetScore, 46);
+  assert.equal(result.resultLabel, "measured");
+  assert.deepEqual(Object.keys(result.normalizedDetail), ["recognitionStatus"]);
+  assert.equal(canonicalPayloadSha256({ b: 2, a: 1 }), canonicalPayloadSha256({ a: 1, b: 2 }));
+});
+
+test("v2 Azure normalizer rejects audio, URI, token, raw secret and oversized provider input", () => {
+  const base = {
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    assessmentLocale: "en-US" as const
+  };
+  for (const providerPayload of [
+    { audio: "bytes" },
+    { file_uri: "file:///private/audio.wav" },
+    { token: "server-secret" },
+    { nested: { authorization: "Bearer secret" } }
+  ]) {
+    assert.throws(() => normalizeAzureFocusResult({ ...base, providerPayload }), /Forbidden provider field/);
+  }
+  assert.throws(
+    () => normalizeAzureFocusResult({ ...base, providerPayload: AZURE_V2_CAPACITY_REFERENCE, payloadByteLimit: 1 }),
+    /measured fixture limit/
+  );
 });
 
 test("review schedules use 1, 3, 7, 14 date-only days and avoid duplicate basis", () => {
@@ -109,7 +157,8 @@ test("daily review selection returns at most one deterministic overdue item", ()
 
 test("daily plan creates five roles, one focus, no duplicate and reviewed content only", () => {
   const result = createDailyPlan({
-    programDay: 1,
+    learningDaySequence: 1,
+    trialProgramDay: 1,
     contentVersionId: CONTENT_VERSION,
     calendarDate: "2026-08-09",
     focusCandidates: focuses(),
@@ -171,7 +220,8 @@ test("review slot fallback is transfer, sentence, practical sentence then insuff
 
 test("due review uses at most one past focus item", () => {
   const result = createDailyPlan({
-    programDay: 1,
+    learningDaySequence: 1,
+    trialProgramDay: 1,
     contentVersionId: CONTENT_VERSION,
     calendarDate: "2026-08-09",
     focusCandidates: focuses(),
@@ -201,7 +251,8 @@ test("an unfinished Program Day keeps its plan when Calendar Date changes", () =
   const resolved = resolveProgramDayPlan({
     existingUncompletedPlan: existing,
     nextPlanInput: {
-      programDay: 2,
+      learningDaySequence: 2,
+      trialProgramDay: 2,
       contentVersionId: CONTENT_VERSION,
       calendarDate: "2026-08-10",
       focusCandidates: focuses(),
@@ -212,9 +263,31 @@ test("an unfinished Program Day keeps its plan when Calendar Date changes", () =
   assert.equal(resolved.status, "ok");
   if (resolved.status === "ok") {
     assert.equal(resolved.reusedExisting, true);
-    assert.equal(resolved.plan.programDay, 1);
-    assert.equal(resolved.plan.calendarDate, "2026-08-09");
+    assert.equal(resolved.plan.learningDaySequence, 1);
+    assert.equal(resolved.plan.originatingCalendarDate, "2026-08-09");
   }
+});
+
+test("date rollover replaces only an unstarted review slot", () => {
+  const plan = mustPlan();
+  const replacement = content("review-vb", "review", { focusGroupKey: "v-b" });
+  const changed = resumeProgramDayPlan({
+    plan,
+    calendarDate: "2026-08-10",
+    startedItemPositions: [1, 2],
+    content: [...standardContent(), replacement],
+    reviewSchedules: [review("review-1", "v-b", "2026-08-10", "e-vb", "day_1")]
+  });
+  assert.equal(changed.requiredItems[4]?.practiceItemKey, "review-vb");
+  assert.deepEqual(changed.requiredItems.slice(0, 4), plan.requiredItems.slice(0, 4));
+  const preserved = resumeProgramDayPlan({
+    plan,
+    calendarDate: "2026-08-10",
+    startedItemPositions: [5],
+    content: [...standardContent(), replacement],
+    reviewSchedules: [review("review-1", "v-b", "2026-08-10", "e-vb", "day_1")]
+  });
+  assert.equal(preserved.requiredItems[4]?.practiceItemKey, plan.requiredItems[4]?.practiceItemKey);
 });
 
 test("shortening needs policy and requires two distinct verified unassisted roles", () => {
@@ -362,6 +435,28 @@ test("at most three valid attempts per item are counted", () => {
   assert.ok(result.excluded.some((item) => item.reason === "invalid_valid_ordinal"));
 });
 
+test("guided retry requires an accepted verified unassisted source in the same owner, session, item and focus", () => {
+  const source = attempt("source", "item-1", "anchor", { serverVerified: false });
+  const guided = attempt("guided", "item-1", "anchor", {
+    attemptRole: "guided_retry",
+    retryFromAttemptId: "source",
+    ordinal: 2,
+    assisted: true
+  });
+  const unverified = selectCountedAttempts([source, guided]);
+  assert.ok(unverified.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
+
+  const duplicateConflict = { ...source, id: "source-conflict", payloadSha256: "different" };
+  const conflicted = selectCountedAttempts([{ ...source, serverVerified: true }, duplicateConflict, guided]);
+  assert.ok(conflicted.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
+
+  const crossUser = selectCountedAttempts([
+    { ...source, serverVerified: true },
+    { ...guided, userId: "user-b" }
+  ]);
+  assert.ok(crossUser.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
+});
+
 test("durable evidence keeps the first verified unassisted attempt for date, focus, role and kind", () => {
   const first = attempt("a1", "item-1", "anchor", { clientAttemptId: "c1" });
   const later = attempt("a2", "item-2", "anchor", {
@@ -392,7 +487,7 @@ test("durable evidence keeps the first verified unassisted attempt for date, foc
 test("focus state is policy-driven, deterministic and reaches stable then maintenance with proper evidence", () => {
   const attempts = focusAttempts();
   const cycles: CorrectionCycle[] = [
-    { id: "cycle-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
+    { id: "cycle-1", userId: USER, sessionId: "session-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
   ];
   const evidence = focusEvidence();
   const stable = deriveFocusState({
@@ -447,7 +542,7 @@ test("focus state does not promote without policy, with same-day held, or guided
     evidence: invalid,
     attempts: focusAttempts(),
     correctionCycles: [
-      { id: "cycle-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
+      { id: "cycle-1", userId: USER, sessionId: "session-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
     ],
     policy: metPolicy()
   });
@@ -457,7 +552,7 @@ test("focus state does not promote without policy, with same-day held, or guided
 test("stable requires day-7 evidence and maintenance requires day-14 evidence", () => {
   const base = focusEvidence();
   const cycles = [
-    { id: "cycle-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
+    { id: "cycle-1", userId: USER, sessionId: "session-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }
   ];
   const withoutDay7 = deriveFocusState({
     focusGroupKey: FOCUS,
@@ -491,13 +586,52 @@ test("unknown evidence policy does not promote focus state", () => {
   assert.ok(result.exclusions[0]?.reason.startsWith("policy_unknown:"));
 });
 
-test("completion accepts only normal five or shortened three with verified learning evidence", () => {
+test("focus policy receives only verified unassisted target-focus evidence", () => {
+  let observedEvidence: readonly FocusEvidence[] = [];
+  const policy = metPolicy();
+  policy.evaluateEvidence = (input) => {
+    observedEvidence = input.allEvidence;
+    return { status: "met", reason: "safe" };
+  };
+  deriveFocusState({
+    focusGroupKey: FOCUS,
+    evidence: [
+      focusEvidence()[0]!,
+      { ...focusEvidence()[2]!, id: "unverified", serverVerified: false },
+      { ...focusEvidence()[3]!, id: "assisted", assisted: true },
+      { ...focusEvidence()[4]!, id: "other", focusGroupKey: "v-b" }
+    ],
+    attempts: focusAttempts(),
+    correctionCycles: [],
+    policy
+  });
+  assert.deepEqual(observedEvidence.map((item) => item.id), ["e-discovered"]);
+});
+
+test("focus state enforces held, transferred, stable and maintenance evidence order", () => {
+  const reordered = focusEvidence().map((item) =>
+    item.kind === "transferred" ? { ...item, calendarDate: "2026-08-01" } : item
+  );
+  const result = deriveFocusState({
+    focusGroupKey: FOCUS,
+    evidence: reordered,
+    attempts: focusAttempts(),
+    correctionCycles: [{ id: "cycle-1", userId: USER, sessionId: "session-1", focusGroupKey: FOCUS, sessionItemId: "item-1", beforeAttemptId: "before", afterAttemptId: "after" }],
+    policy: metPolicy()
+  });
+  assert.equal(result.state, "held");
+  assert.ok(result.exclusions.some((item) => item.evidenceId === "e-transfer"));
+});
+
+test("completion accepts normal five and re-evaluates shortening instead of trusting item reasons", () => {
   const normalItems = completionItems(5);
   const verified = attempt("a1", "required-1", "anchor");
   const normal = evaluateSessionCompletion({
-    idempotencyKey: "complete-1",
+    idempotencyKey: COMPLETION_KEY,
     calendarDate: "2026-08-09",
-    requiredCount: 5,
+    sessionId: "session-1",
+    sessionTimezone: "Asia/Tokyo",
+    plan: mustPlan(),
     items: normalItems,
     attempts: [verified],
     priorCompletedCalendarDates: []
@@ -506,50 +640,74 @@ test("completion accepts only normal five or shortened three with verified learn
   assert.deepEqual(
     normal,
     evaluateSessionCompletion({
-      idempotencyKey: "complete-1",
+      idempotencyKey: COMPLETION_KEY,
       calendarDate: "2026-08-09",
-      requiredCount: 5,
+      sessionId: "session-1",
+      sessionTimezone: "Asia/Tokyo",
+      plan: mustPlan(),
       items: normalItems,
       attempts: [verified],
       priorCompletedCalendarDates: []
     })
   );
 
-  const shortened = completionItems(5).map((item, index) =>
-    index < 3 ? item : { ...item, completionReason: "shortened" as const }
-  );
+  const shortened = completionItems(5).map((item, index) => index < 3 ? item : { ...item, completionReason: undefined });
   assert.equal(
     evaluateSessionCompletion({
-      idempotencyKey: "complete-2",
+      idempotencyKey: "22222222-2222-4222-8222-222222222222",
       calendarDate: "2026-08-10",
-      requiredCount: 3,
+      sessionId: "session-1",
+      sessionTimezone: "Asia/Tokyo",
+      plan: mustPlan(),
       items: shortened,
-      attempts: [verified],
-      priorCompletedCalendarDates: []
+      attempts: [
+        attempt("a1", "required-1", "anchor", { practiceItemKey: "anchor-1" }),
+        attempt("a2", "required-2", "contrast", { practiceItemKey: "contrast-1" })
+      ],
+      priorCompletedCalendarDates: [],
+      shorteningPolicy: metPolicy()
     }).status,
     "eligible"
   );
 });
 
+test("three completed items are rejected without server shortening policy evidence", () => {
+  const items = completionItems(5).map((item, index) => index < 3 ? item : { ...item, completionReason: undefined });
+  const result = evaluateSessionCompletion({
+    idempotencyKey: "33333333-3333-4333-8333-333333333333",
+    calendarDate: "2026-08-09",
+    sessionId: "session-1",
+    sessionTimezone: "Asia/Tokyo",
+    plan: mustPlan(),
+    items,
+    attempts: [attempt("a1", "required-1", "anchor", { practiceItemKey: "anchor-1" })],
+    priorCompletedCalendarDates: []
+  });
+  assert.deepEqual(result, {
+    status: "ineligible",
+    idempotencyKey: "33333333-3333-4333-8333-333333333333",
+    reason: "required_items_incomplete"
+  });
+});
+
 test("completion rejects open, invalid-only, optional-only, wrong counts and same-date duplicate", () => {
   const base = {
-    idempotencyKey: "complete-x",
+    idempotencyKey: "44444444-4444-4444-8444-444444444444",
     calendarDate: "2026-08-09",
+    sessionId: "session-1",
+    sessionTimezone: "Asia/Tokyo",
+    plan: mustPlan(),
     items: completionItems(5),
     attempts: [attempt("a1", "required-1", "anchor")],
     priorCompletedCalendarDates: [] as string[]
   };
-  for (const requiredCount of [1, 2, 4]) {
-    assert.equal(evaluateSessionCompletion({ ...base, requiredCount }).status, "ineligible");
-  }
   assert.equal(
-    evaluateSessionCompletion({ ...base, requiredCount: 5, items: [{ ...base.items[0]!, completionReason: undefined }] }).status,
+    evaluateSessionCompletion({ ...base, items: [{ ...base.items[0]!, completionReason: undefined }] }).status,
     "ineligible"
   );
   assert.equal(
     evaluateSessionCompletion({
       ...base,
-      requiredCount: 5,
       attempts: [attempt("unverified", "required-1", "anchor", { serverVerified: false })]
     }).status,
     "ineligible"
@@ -557,7 +715,6 @@ test("completion rejects open, invalid-only, optional-only, wrong counts and sam
   assert.equal(
     evaluateSessionCompletion({
       ...base,
-      requiredCount: 5,
       attempts: [attempt("bad", "required-1", "anchor", { technicalValidity: "invalid", ordinal: undefined })]
     }).status,
     "ineligible"
@@ -565,20 +722,35 @@ test("completion rejects open, invalid-only, optional-only, wrong counts and sam
   assert.equal(
     evaluateSessionCompletion({
       ...base,
-      requiredCount: 5,
       attempts: [attempt("optional", "optional-1", "optional_extension")]
     }).status,
     "ineligible"
   );
   assert.equal(
-    evaluateSessionCompletion({ ...base, requiredCount: 5, priorCompletedCalendarDates: ["2026-08-09"] }).status,
+    evaluateSessionCompletion({ ...base, priorCompletedCalendarDates: ["2026-08-09"] }).status,
     "ineligible"
   );
 });
 
+test("completion rejects blank or malformed idempotency keys and invalid timezone boundaries", () => {
+  const base = {
+    calendarDate: "2026-08-09",
+    sessionId: "session-1",
+    sessionTimezone: "Asia/Tokyo",
+    plan: mustPlan(),
+    items: completionItems(5),
+    attempts: [attempt("a1", "required-1", "anchor")],
+    priorCompletedCalendarDates: [] as string[]
+  };
+  assert.equal(evaluateSessionCompletion({ ...base, idempotencyKey: "" }).status, "ineligible");
+  assert.equal(evaluateSessionCompletion({ ...base, idempotencyKey: "not-a-uuid" }).status, "ineligible");
+  assert.equal(evaluateSessionCompletion({ ...base, idempotencyKey: COMPLETION_KEY, sessionTimezone: "Mars/Base" }).status, "ineligible");
+});
+
 function createPlan(contentRows: ContentCandidate[], focusRows: FocusCandidate[] = focuses()) {
   return createDailyPlan({
-    programDay: 1,
+    learningDaySequence: 1,
+    trialProgramDay: 1,
     contentVersionId: CONTENT_VERSION,
     calendarDate: "2026-08-09",
     focusCandidates: focusRows,
@@ -675,6 +847,7 @@ function attempt(
 ): LearningAttempt {
   return {
     id,
+    userId: USER,
     sessionId: "session-1",
     sessionItemId,
     clientAttemptId: overrides.clientAttemptId ?? `client-${id}`,
@@ -748,6 +921,8 @@ function evidence(
 ): FocusEvidence {
   return {
     id,
+    userId: USER,
+    sessionItemId: "item-1",
     focusGroupKey: FOCUS,
     kind,
     calendarDate,
@@ -763,6 +938,8 @@ function evidence(
 function completionItems(count: number): CompletionItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `required-${index + 1}`,
+    practiceItemKey: ["anchor-1", "contrast-1", "transfer-1", "sentence-1", "transfer-2"][index]!,
+    focusGroupKey: FOCUS,
     required: true,
     promptRole: (index === 0 ? "anchor" : index === 1 ? "contrast" : "transfer_word") as PromptRole,
     completionReason: "completed"

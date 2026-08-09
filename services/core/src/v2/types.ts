@@ -28,6 +28,7 @@ export type PolicyDecision =
 
 export interface LearningAttempt {
   id: string;
+  userId: string;
   sessionId: string;
   sessionItemId: string;
   clientAttemptId: string;
@@ -73,6 +74,10 @@ export interface ContentCandidate {
   active: boolean;
   humanReviewed: boolean;
   azureValidated: boolean;
+  referenceText?: string;
+  referenceTextVersion?: string;
+  expectedFocusRepresentation?: string;
+  nextActionKey?: string;
 }
 
 export interface FocusCandidate {
@@ -117,9 +122,11 @@ export interface PlannedItem {
 }
 
 export interface DailyPlan {
-  programDay: number;
+  learningDaySequence: number;
+  trialProgramDay?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   contentVersionId: string;
-  calendarDate: DateOnly;
+  originatingCalendarDate: DateOnly;
+  effectiveCalendarDate: DateOnly;
   focusGroupKey: string;
   requiredCount: 5;
   requiredItems: PlannedItem[];
@@ -130,6 +137,8 @@ export interface DailyPlan {
 
 export interface FocusEvidence {
   id: string;
+  userId: string;
+  sessionItemId: string;
   focusGroupKey: string;
   kind: EvidenceKind;
   calendarDate: DateOnly;
@@ -145,6 +154,8 @@ export interface FocusEvidence {
 
 export interface CorrectionCycle {
   id: string;
+  userId: string;
+  sessionId: string;
   focusGroupKey: string;
   sessionItemId: string;
   beforeAttemptId: string;
@@ -153,6 +164,8 @@ export interface CorrectionCycle {
 
 export interface CompletionItem {
   id: string;
+  practiceItemKey: string;
+  focusGroupKey: string;
   required: boolean;
   promptRole: PromptRole;
   completionReason?: "completed" | "shortened" | "substituted" | "skipped_after_technical_failures";

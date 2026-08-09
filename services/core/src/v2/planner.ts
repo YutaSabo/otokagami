@@ -1,4 +1,5 @@
 import { selectCountedAttempts } from "./attempts.js";
+import { assertDateOnly, assertPositiveLearningSequence, assertTrialProgramDay } from "./dates.js";
 import { selectDueReview } from "./reviews.js";
 import type {
   ContentCandidate,
@@ -35,7 +36,8 @@ export function selectFocusCandidate(candidates: readonly FocusCandidate[]): Foc
 }
 
 export function createDailyPlan(input: {
-  programDay: number;
+  learningDaySequence: number;
+  trialProgramDay?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   contentVersionId: string;
   calendarDate: string;
   focusCandidates: readonly FocusCandidate[];
@@ -45,6 +47,9 @@ export function createDailyPlan(input: {
   | { status: "ok"; plan: DailyPlan }
   | { status: "insufficient_content"; reason: string; focusGroupKey?: string } {
   const focus = selectFocusCandidate(input.focusCandidates);
+  assertPositiveLearningSequence(input.learningDaySequence);
+  assertTrialProgramDay(input.trialProgramDay);
+  assertDateOnly(input.calendarDate);
   if (focus === undefined) return { status: "insufficient_content", reason: "no_eligible_focus" };
 
   const usable = input.content
@@ -153,9 +158,11 @@ export function createDailyPlan(input: {
   return {
     status: "ok",
     plan: {
-      programDay: input.programDay,
+      learningDaySequence: input.learningDaySequence,
+      trialProgramDay: input.trialProgramDay,
       contentVersionId: input.contentVersionId,
-      calendarDate: input.calendarDate,
+      originatingCalendarDate: input.calendarDate,
+      effectiveCalendarDate: input.calendarDate,
       focusGroupKey: focus.focusGroupKey,
       requiredCount: 5,
       requiredItems,
@@ -163,6 +170,50 @@ export function createDailyPlan(input: {
       selectedReview: review,
       reviewSubstitutionReason
     }
+  };
+}
+
+export function resumeProgramDayPlan(input: {
+  plan: DailyPlan;
+  calendarDate: string;
+  startedItemPositions: readonly number[];
+  content: readonly ContentCandidate[];
+  reviewSchedules: readonly ReviewScheduleCandidate[];
+}): DailyPlan {
+  assertDateOnly(input.calendarDate);
+  if (input.calendarDate === input.plan.effectiveCalendarDate) return input.plan;
+  const reviewItem = input.plan.requiredItems.find((item) => item.slotRole === "review");
+  if (reviewItem === undefined || input.startedItemPositions.includes(reviewItem.position)) {
+    return { ...input.plan, effectiveCalendarDate: input.calendarDate };
+  }
+  const selectedReview = selectDueReview({
+    calendarDate: input.calendarDate,
+    schedules: input.reviewSchedules
+  }).selected;
+  if (selectedReview === undefined) {
+    return { ...input.plan, effectiveCalendarDate: input.calendarDate };
+  }
+  const replacement = [...input.content]
+    .filter(
+      (candidate) =>
+        candidate.contentVersionId === input.plan.contentVersionId &&
+        candidate.focusGroupKey === selectedReview.focusGroupKey &&
+        candidate.promptRole === "review" &&
+        candidate.active &&
+        candidate.humanReviewed &&
+        candidate.azureValidated
+    )
+    .sort(compareContent)[0];
+  if (replacement === undefined) return { ...input.plan, effectiveCalendarDate: input.calendarDate };
+  return {
+    ...input.plan,
+    effectiveCalendarDate: input.calendarDate,
+    selectedReview,
+    requiredItems: input.plan.requiredItems.map((item) =>
+      item.position === reviewItem.position
+        ? { ...toPlannedItem(replacement, item.position, "review", true, "due_review"), reviewScheduleId: selectedReview.id }
+        : item
+    )
   };
 }
 
