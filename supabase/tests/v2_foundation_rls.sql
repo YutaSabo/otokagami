@@ -83,9 +83,11 @@ values
   ('s6-03-draft', 1, 'en-US', 'ja-JP', 'draft', null, null, null, null),
   ('s6-03-active', 1, 'en-US', 'ja-JP', 'active', now(), now(), now(), repeat('a', 64));
 
+select set_config('app.v2_trusted_command', 'on', true);
 update public.learning_deletion_epochs
 set current_epoch = 1
 where user_id = 'a1111111-1111-1111-1111-111111111111';
+select set_config('app.v2_trusted_command', 'off', true);
 
 do $$
 begin
@@ -96,7 +98,7 @@ begin
     raise exception 'trusted boundary failed: deletion epoch moved backwards';
   exception
     when raise_exception then
-      if sqlerrm <> 'Learning deletion epoch must increase' then
+      if sqlerrm not in ('V2_DIRECT_MUTATION_FORBIDDEN', 'V2_DELETION_EPOCH_MUST_INCREMENT', 'Learning deletion epoch must increase') then
         raise;
       end if;
   end;

@@ -4,8 +4,8 @@ do $$
 declare
   function_signature regprocedure;
 begin
-  if (select count(*) from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE') <> 35 then
-    raise exception 'S6-05/07 runtime migration must not add or remove public tables';
+  if (select count(*) from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE') <> 36 then
+    raise exception 'S6-07 runtime hardening must add only assessment_tickets';
   end if;
   if (select count(*) from pg_policies where schemaname = 'public') <> 64 then
     raise exception 'S6-05/07 runtime migration changed existing RLS policies';
@@ -31,16 +31,28 @@ begin
   end if;
 
   foreach function_signature in array array[
-    'public.create_v2_daily_session(uuid,text,date,uuid,text,text,jsonb,text)'::regprocedure,
-    'public.refresh_v2_review_slot(uuid,uuid,date,jsonb)'::regprocedure,
-    'public.persist_v2_attempt(uuid,uuid,uuid,uuid,text,bigint,text,uuid,timestamp with time zone,date,text,text,text,text,text,boolean,text,text,numeric,text,text,jsonb,jsonb)'::regprocedure,
-    'public.complete_v2_program_day(uuid,uuid,uuid,text,timestamp with time zone,date)'::regprocedure
+    'public.issue_v2_assessment_ticket(uuid,uuid,text,text,bigint,integer,integer,integer,timestamp with time zone,text)'::regprocedure,
+    'public.create_v2_daily_session_secure(uuid,text,date,uuid,text,text,jsonb,text,text,timestamp with time zone)'::regprocedure,
+    'public.refresh_v2_review_slot_secure(uuid,uuid,date,jsonb,text,timestamptz)'::regprocedure,
+    'public.persist_v2_attempt_with_ticket(uuid,uuid,uuid,text,bigint,uuid,text,timestamp with time zone,date,text,text,text,text,text,text,boolean,boolean,text,text,numeric,text,text,jsonb,jsonb,text)'::regprocedure,
+    'public.complete_v2_program_day_secure(uuid,uuid,uuid,text,timestamp with time zone,date,text)'::regprocedure
   ] loop
     if has_function_privilege('anon', function_signature, 'EXECUTE')
       or has_function_privilege('authenticated', function_signature, 'EXECUTE')
       or not has_function_privilege('service_role', function_signature, 'EXECUTE')
     then
       raise exception 'Protected RPC privilege boundary failed for %', function_signature;
+    end if;
+  end loop;
+
+  foreach function_signature in array array[
+    'public.create_v2_daily_session(uuid,text,date,uuid,text,text,jsonb,text)'::regprocedure,
+    'public.refresh_v2_review_slot(uuid,uuid,date,jsonb)'::regprocedure,
+    'public.persist_v2_attempt(uuid,uuid,uuid,uuid,text,bigint,text,uuid,timestamp with time zone,date,text,text,text,text,text,boolean,text,text,numeric,text,text,jsonb,jsonb)'::regprocedure,
+    'public.complete_v2_program_day(uuid,uuid,uuid,text,timestamp with time zone,date)'::regprocedure
+  ] loop
+    if has_function_privilege('service_role', function_signature, 'EXECUTE') then
+      raise exception 'Deprecated insecure RPC remains executable for %', function_signature;
     end if;
   end loop;
 

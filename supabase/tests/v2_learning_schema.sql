@@ -23,8 +23,8 @@ begin
     from information_schema.tables
     where table_schema = 'public'
       and table_type = 'BASE TABLE'
-  ) <> 35 then
-    raise exception 'S6-04 schema failed: expected 24 existing plus 11 new public base tables';
+  ) <> 36 then
+    raise exception 'S6-04/S6-07 schema failed: expected 35 existing plus assessment_tickets';
   end if;
 
   foreach new_table_name in array new_tables loop

@@ -16,10 +16,11 @@ begin
   ) <> 1 then
     raise exception 'Parallel replay did not persist exactly one canonical result';
   end if;
+  if (
+    select count(*) from public.assessment_tickets
+    where user_id='a9090909-9090-4909-8909-909090909090' and status='consumed'
+  ) <> 1 then
+    raise exception 'Parallel replay did not consume exactly one assessment ticket';
+  end if;
 end;
 $$;
-
-delete from auth.users where id = 'a9090909-9090-4909-8909-909090909090';
-set role service_role;
-delete from public.content_versions where id = 'c9090909-9090-4909-8909-909090909090';
-reset role;
