@@ -441,6 +441,26 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **停止・削除・復旧手順**：S6-07 containerは停止済み。削除は実施していない。削除時は15 container、5 volume、関連一時ディレクトリとimage共有関係を再列挙し、別承認を得る。Hosted適用後のrollbackはv2 modeを`off`に保ち、新objectを未使用のまま残してv1を継続し、即dropしない。
 - **次回確認日**：S6-08開始前
 
+## ESC-016：S6-07 Azure判定trust boundaryのlocal検証とstaging clone rehearsal
+
+- **分類**：ローカルDB migration・RPC・RLS・APIセキュリティ検証
+- **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、S6-07専用Fresh stack、S6-05〜07 staging相当DB volumeの独立clone、通常npm workspace
+- **実施日時・最終確認日**：2026-08-10
+- **実施者**：ユーザー承認のもとCodex
+- **実施状況**：local実装、Fresh検証、staging clone rehearsalまで完了。Hosted `otokagami-staging`への適用はmigration hash提示後の直前承認待ちで、v2 modeは既定`off`のまま。
+- **変更内容**：forward-only migration `20260810000000_harden_v2_assessment_boundary.sql`（SHA-256 `32b160f744bb7e7cc3fa0c59d3ddd7abd8e3ea70e04281f45de824601ddad225`）で、管理課題と正規化条件を束縛する一回限りのassessment ticket、厳格なsubscription確認、保護対象の直接変更を拒否するguard、service-role専用secure RPC、deletion epochの単調増加、trial／Program Dayの単調更新を追加した。Azure provider payloadはrequest処理中だけallowlist normalizerへ渡し、音声、端末URI、token、生JSONは保存しない。`server_normalized`とprovider attestationを区別し、provider attestationは未実装のためfalseのままとする。
+- **Fresh検証**：project ID `oto-s607-final`、専用port `59920`〜`59929`で全migration、Seed、content Seed、既存v1 RLS、S6-03／04、runtime、S6-07 schema／RLS／RPC security testを実行した。public table 36件、policy 64件、新`assessment_tickets` 0件。並行attempt再送2件はcanonical attempt／result各1件、消費済みticket 1件へ収束し、一方が新規・他方がidempotent replayとなった。Supabase DB lintはerror 0件。
+- **Upgrade rehearsal**：停止済みstaging相当source volumeを変更せず、独立container `supabase_db_oto-s607-hardening-upgrade-20260810`（port `60022`）へ複製し、対象migration 1件だけを単一transactionで適用した。Auth user 23件、既存35 tableの全exact件数、policy 64件とdefinition digest `6c5a84fadbb5064a22d56ad0da1f3efc`、主要orphan／duplicate／status集計、新v2 row 0件が前後一致した。public tableだけ35件から36件へ増え、`assessment_tickets`は0件。元volumeとHosted DBは変更していない。
+- **回帰結果**：Core lint・46 test・build・Node ESM import、API lint・56 test・通常workspace Next.js build、Mobile lint・26 test・public config build、root lint・root buildに成功した。Python inference lint／buildは成功したが、既存unittestは境界時間を超えて停止したため成功扱いにしていない。S6-07の新v2経路はruntime Python／OpenAI／Piperを使用しない。
+- **Colima容量変更**：Fresh reset中にColima VMの20GiB diskが100%となり`No space left on device`で停止した。ホスト側に約497GiBの空きがあることを確認し、container／volume／imageを削除せずColimaを停止後、disk上限だけを20GiBから40GiBへ非破壊拡張した。再起動後はVM内で約19GiBの空きを確認し、同じmigrationとtestを再実行して完走した。CPU／memory設定と外部サービス設定は変更していない。
+- **保持中resource**：今回のFresh stack 11 containerとclone DB container 1件はすべて停止済み。専用volumeはFresh DB約87.92MB、Storage 0B、clone DB約124.8MBの3件を保持している。途中の失敗／先行検証stack、S6-01〜S6-06資源、backup、image、一時ファイルは削除していない。
+- **接続境界**：Hosted Supabase、旧`Otokagami`、Vercel環境変数、v2 mode、Azure、RevenueCat、EAS、TestFlight、App Store、Productionは変更していない。Hosted適用後もv2 modeを`off`に保つ計画である。
+- **想定されるリスク**：Hosted適用前であること、provider attestation未実装、製品policyとactive教材未設定、既存Python inference unittest停止、停止container／volume／imageによるディスク消費、Colima disk上限拡張による将来の最大使用量増加。
+- **リスクレベル**：中
+- **状態確認方法**：migration SHA-256、Fresh／clone DB test、`docker ps -a`、`docker volume ls`、`docker system df -v`、`colima status`、Core/API/Mobile check、Git diffを確認する。
+- **停止・削除・復旧手順**：今回の12 containerは停止済み。削除は実施していない。削除時は対象container、3 volume、関連一時ディレクトリ、共有imageを再列挙し、別承認を得る。Hosted適用後のrollbackはv2 modeを`off`に保ち、新objectを未使用のまま残してv1を継続し、即dropしない。
+- **次回確認日**：Hosted適用承認後、またはS6-08開始前
+
 ## 9. 要確認事項
 
 1. **ESC-001（高）**：Vercel ステージング API の Require Log In を再有効化する日時と、外部端末テストを継続する必要性を決める。
@@ -453,6 +473,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 8. **ESC-013**：`otokagami-staging`への承認済み2 migration適用と前後照合は完了した。v2 read/writeは未有効。S6-03の停止container 24件・volume 4件・一時ディレクトリ3件の削除は別承認とする。
 9. **ESC-014**：S6-04 local／staging clone検証と承認済みHosted適用は完了し、v2 read/writeは未有効。S6-04の停止container 33件・volume 6件・一時ディレクトリ3件の削除は別承認とする。複数stackの同時起動はColima過負荷を避ける。
 10. **ESC-015**：S6-05〜07のlocal／staging clone検証と承認済みHosted migration適用は完了し、v2 modeは`off`のまま。停止container 15件、volume 5件、関連image・一時ディレクトリは保持し、削除は別承認とする。
+11. **ESC-016**：S6-07 hardeningはlocal／staging clone検証済みで、Hosted適用は直前承認待ち。provider attestation、製品policy、active教材は未実装・未設定。停止container 12件、volume 3件とColima 40GiB disk上限を保持し、削除・縮小は別承認とする。
 
 ### 調査範囲と制限
 
@@ -476,3 +497,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-09 | ESC-014 | Codex | 明示承認後、確定hashのS6-04 migrationだけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存24 table全件数、既存53 policy digestの不変、新11 table 0件、RLS・grant・guard、v1 healthと未認証拒否、v2 read/write未有効、旧`Otokagami`未操作を確認。 |
 | 2026-08-09 | ESC-015 | Codex | S6-05安全修正、Core ESM runtime、8本の`/api/v2`、service-role専用RPCを実装。Fresh reset／Seed／既存・新RLS・RPC・並行再送と、S6-04 staging相当DBの独立clone upgradeを完了し、Auth 23件、既存35 table全件数、64 policy digestの不変、新v2 row 0件、container停止・volume保持、Hosted未変更を確認。 |
 | 2026-08-09 | ESC-015 | Codex | 明示承認後、確定hashのS6-05〜07 migrationだけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、public 35 table全exact件数、64 policy digestの不変、新v2 row 0件、10 column・11 trigger・4 RPCとclient実行拒否、v1 healthと未認証拒否、v2 mode未変更、旧`Otokagami`未操作を確認。 |
+| 2026-08-10 | ESC-016 | Codex | S6-07の一回限りassessment ticket、厳格normalizer、secure RPC、immutable guardをforward-only実装。Fresh reset／Seed／RLS／RPC／並行再送とstaging相当の独立clone upgradeを完了し、Auth 23件、既存35 table全件数、64 policy digest、品質集計の不変、新table 0件、Hosted未変更を確認。Colima diskは資源削除なしで20GiBから40GiBへ拡張し、検証後の12 containerを停止、3 volumeを保持した。 |
