@@ -59,12 +59,15 @@ test("Calendar Date uses explicit IANA timezone across DST and day boundaries", 
 });
 
 test("v2 Azure normalizer emits only allowlisted focus fields with a fixture-derived byte limit", () => {
-  assert.equal(
-    AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES,
-    new TextEncoder().encode(JSON.stringify(AZURE_V2_CAPACITY_REFERENCE)).byteLength
-  );
+  const checkedFixtureEnvelope = new TextEncoder().encode(JSON.stringify(AZURE_V2_CAPACITY_REFERENCE)).byteLength * 4;
+  assert.ok(AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES >= checkedFixtureEnvelope);
+  assert.equal(Math.log2(AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES) % 1, 0);
   const result = normalizeAzureFocusResult({
     providerPayload: AZURE_V2_CAPACITY_REFERENCE,
+    referenceText: "think now",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think-now",
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
     nextActionKey: "tongue_forward",
@@ -79,6 +82,10 @@ test("v2 Azure normalizer emits only allowlisted focus fields with a fixture-der
 
 test("v2 Azure normalizer rejects audio, URI, token, raw secret and oversized provider input", () => {
   const base = {
+    referenceText: "think now",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think-now",
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
     assessmentLocale: "en-US" as const
@@ -97,13 +104,122 @@ test("v2 Azure normalizer rejects audio, URI, token, raw secret and oversized pr
   );
 });
 
+test("v2 Azure normalizer fails closed for empty, missing status, missing target and cross-reference results", () => {
+  const base = {
+    referenceText: "think",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think",
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    assessmentLocale: "en-US" as const
+  };
+  assert.throws(() => normalizeAzureFocusResult({ ...base, providerPayload: {} }), /RecognitionStatus/);
+  assert.throws(
+    () => normalizeAzureFocusResult({
+      ...base,
+      providerPayload: { NBest: [{ Words: [{ Phonemes: [{ Phoneme: "θ", PronunciationAssessment: { AccuracyScore: 80 } }] }] }] }
+    }),
+    /RecognitionStatus/
+  );
+  assert.throws(
+    () => normalizeAzureFocusResult({
+      ...base,
+      providerPayload: {
+        RecognitionStatus: "Success",
+        DisplayText: "think",
+        NBest: [{ Words: [{ Phonemes: [{ Phoneme: "s", PronunciationAssessment: { AccuracyScore: 80 } }] }] }]
+      }
+    }),
+    /target/i
+  );
+});
+
+test("v2 Azure normalizer accepts a representative complete result and rejects normalized forbidden keys", () => {
+  const representative = {
+    RecognitionStatus: "Success",
+    DisplayText: "think now",
+    Offset: 900000,
+    Duration: 12800000,
+    NBest: [{
+      Confidence: 0.91,
+      Lexical: "think now",
+      ITN: "think now",
+      MaskedITN: "think now",
+      Display: "think now",
+      PronunciationAssessment: {
+        AccuracyScore: 81,
+        FluencyScore: 74,
+        CompletenessScore: 100,
+        PronScore: 78,
+        ProsodyScore: 72
+      },
+      Words: [{
+        Word: "think",
+        Offset: 900000,
+        Duration: 6400000,
+        PronunciationAssessment: { AccuracyScore: 46, ErrorType: "None" },
+        Syllables: [{ Syllable: "θɪŋk", Offset: 900000, Duration: 6400000, PronunciationAssessment: { AccuracyScore: 46 } }],
+        Phonemes: [{
+          Phoneme: "θ",
+          Offset: 900000,
+          Duration: 1200000,
+          PronunciationAssessment: {
+            AccuracyScore: 46,
+            NBestPhonemes: [{ Phoneme: "θ", Score: 46 }, { Phoneme: "s", Score: 91 }]
+          }
+        }]
+      }, {
+        Word: "now",
+        Offset: 7400000,
+        Duration: 6300000,
+        PronunciationAssessment: { AccuracyScore: 88, ErrorType: "None" },
+        Syllables: [],
+        Phonemes: []
+      }]
+    }]
+  };
+  assert.ok(new TextEncoder().encode(JSON.stringify(representative)).byteLength > 356);
+  const result = normalizeAzureFocusResult({
+    providerPayload: representative,
+    referenceText: "think now",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think-now",
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    assessmentLocale: "en-US"
+  });
+  assert.equal(result.technicalValid, true);
+
+  const forbidden = [
+    { audioData: "bytes" },
+    { audioBase64: "bytes" },
+    { fileUri: "file:///tmp/a.wav" },
+    { accessToken: "token" },
+    { nested_value: { "authorization-header": "Bearer secret" } }
+  ];
+  for (const providerPayload of forbidden) {
+    assert.throws(() => normalizeAzureFocusResult({
+      providerPayload,
+      referenceText: "think now",
+      contentVersionId: CONTENT_VERSION,
+      practiceItemKey: "think-now",
+      targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+      expectedFocusRepresentation: "θ",
+      referenceTextVersion: "fixture-v1",
+      assessmentLocale: "en-US"
+    }), /Forbidden provider field/);
+  }
+});
+
 test("review schedules use 1, 3, 7, 14 date-only days and avoid duplicate basis", () => {
   const result = createReviewScheduleCandidates({
     evidence: {
       id: "e1",
       focusGroupKey: FOCUS,
       calendarDate: "2026-02-27",
-      serverVerified: true,
+      serverNormalized: true,
       assisted: false,
       kind: "held"
     },
@@ -130,15 +246,15 @@ test("review schedules reject unverified or assisted basis evidence", () => {
     focusGroupKey: FOCUS,
     calendarDate: "2026-08-01",
     assisted: false,
-    serverVerified: false,
+    serverNormalized: false,
     kind: "held" as const
   };
   assert.deepEqual(createReviewScheduleCandidates({ evidence: base }), {
     status: "ineligible",
-    reason: "unverified_basis"
+    reason: "unnormalized_basis"
   });
   assert.deepEqual(
-    createReviewScheduleCandidates({ evidence: { ...base, serverVerified: true, assisted: true } }),
+    createReviewScheduleCandidates({ evidence: { ...base, serverNormalized: true, assisted: true } }),
     { status: "ineligible", reason: "assisted_basis" }
   );
 });
@@ -436,7 +552,7 @@ test("at most three valid attempts per item are counted", () => {
 });
 
 test("guided retry requires an accepted verified unassisted source in the same owner, session, item and focus", () => {
-  const source = attempt("source", "item-1", "anchor", { serverVerified: false });
+  const source = attempt("source", "item-1", "anchor", { serverNormalized: false });
   const guided = attempt("guided", "item-1", "anchor", {
     attemptRole: "guided_retry",
     retryFromAttemptId: "source",
@@ -447,11 +563,11 @@ test("guided retry requires an accepted verified unassisted source in the same o
   assert.ok(unverified.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
 
   const duplicateConflict = { ...source, id: "source-conflict", payloadSha256: "different" };
-  const conflicted = selectCountedAttempts([{ ...source, serverVerified: true }, duplicateConflict, guided]);
+  const conflicted = selectCountedAttempts([{ ...source, serverNormalized: true }, duplicateConflict, guided]);
   assert.ok(conflicted.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
 
   const crossUser = selectCountedAttempts([
-    { ...source, serverVerified: true },
+    { ...source, serverNormalized: true },
     { ...guided, userId: "user-b" }
   ]);
   assert.ok(crossUser.excluded.some((item) => item.attemptId === "guided" && item.reason === "guided_retry_source_mismatch"));
@@ -472,7 +588,7 @@ test("durable evidence keeps the first verified unassisted attempt for date, foc
   });
   const unverified = attempt("u1", "item-3", "contrast", {
     clientAttemptId: "c4",
-    serverVerified: false
+    serverNormalized: false
   });
   const result = selectDurableEvidenceCandidates({
     attempts: [later, guided, unverified, first],
@@ -481,7 +597,7 @@ test("durable evidence keeps the first verified unassisted attempt for date, foc
   assert.deepEqual(result.evidence.map((item) => item.attemptId), ["a1"]);
   assert.ok(result.excluded.some((item) => item.reason === "duplicate_durable_evidence"));
   assert.ok(result.excluded.some((item) => item.reason === "assisted_not_durable"));
-  assert.ok(result.excluded.some((item) => item.reason === "not_server_verified"));
+  assert.ok(result.excluded.some((item) => item.reason === "not_server_normalized"));
 });
 
 test("focus state is policy-driven, deterministic and reaches stable then maintenance with proper evidence", () => {
@@ -597,7 +713,7 @@ test("focus policy receives only verified unassisted target-focus evidence", () 
     focusGroupKey: FOCUS,
     evidence: [
       focusEvidence()[0]!,
-      { ...focusEvidence()[2]!, id: "unverified", serverVerified: false },
+      { ...focusEvidence()[2]!, id: "unverified", serverNormalized: false },
       { ...focusEvidence()[3]!, id: "assisted", assisted: true },
       { ...focusEvidence()[4]!, id: "other", focusGroupKey: "v-b" }
     ],
@@ -708,7 +824,7 @@ test("completion rejects open, invalid-only, optional-only, wrong counts and sam
   assert.equal(
     evaluateSessionCompletion({
       ...base,
-      attempts: [attempt("unverified", "required-1", "anchor", { serverVerified: false })]
+      attempts: [attempt("unverified", "required-1", "anchor", { serverNormalized: false })]
     }).status,
     "ineligible"
   );
@@ -822,7 +938,7 @@ function review(
     dueDate,
     basedOnEvidenceId,
     intervalKind,
-    serverVerifiedBasis: true,
+    serverNormalizedBasis: true,
     unassistedBasis: true
   };
 }
@@ -842,7 +958,7 @@ function attempt(
     assisted?: boolean;
     technicalValidity?: LearningAttempt["technicalValidity"];
     invalidReason?: string;
-    serverVerified?: boolean;
+    serverNormalized?: boolean;
   } = {}
 ): LearningAttempt {
   return {
@@ -867,7 +983,8 @@ function attempt(
     assisted: overrides.assisted ?? false,
     technicalValidity: overrides.technicalValidity ?? "valid",
     invalidReason: overrides.invalidReason,
-    serverVerified: overrides.serverVerified ?? true,
+    serverNormalized: overrides.serverNormalized ?? true,
+    providerAttested: false,
     provider: "fixture-provider",
     assessmentLocale: "en-US"
   };
@@ -929,7 +1046,7 @@ function evidence(
     promptRole,
     promptContext,
     assisted: false,
-    serverVerified: true,
+    serverNormalized: true,
     contentVersionId: CONTENT_VERSION,
     ...overrides
   };

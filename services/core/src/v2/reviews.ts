@@ -24,13 +24,13 @@ export function reviewStatusForDate(dueDate: DateOnly, calendarDate: DateOnly): 
 export function createReviewScheduleCandidates(input: {
   evidence: Pick<
     FocusEvidence,
-    "id" | "focusGroupKey" | "calendarDate" | "serverVerified" | "assisted" | "kind"
+    "id" | "focusGroupKey" | "calendarDate" | "serverNormalized" | "assisted" | "kind"
   >;
   existing?: readonly Pick<ReviewScheduleCandidate, "basedOnEvidenceId" | "intervalKind">[];
 }):
   | { status: "created"; schedules: ReviewScheduleCandidate[] }
-  | { status: "ineligible"; reason: "unverified_basis" | "assisted_basis" | "non_durable_basis" } {
-  if (!input.evidence.serverVerified) return { status: "ineligible", reason: "unverified_basis" };
+  | { status: "ineligible"; reason: "unnormalized_basis" | "assisted_basis" | "non_durable_basis" } {
+  if (!input.evidence.serverNormalized) return { status: "ineligible", reason: "unnormalized_basis" };
   if (input.evidence.assisted) return { status: "ineligible", reason: "assisted_basis" };
   if (input.evidence.kind === "immediate_change") {
     return { status: "ineligible", reason: "non_durable_basis" };
@@ -49,7 +49,7 @@ export function createReviewScheduleCandidates(input: {
       basedOnEvidenceId: input.evidence.id,
       intervalKind,
       dueDate: addCalendarDays(input.evidence.calendarDate, offset),
-      serverVerifiedBasis: true,
+      serverNormalizedBasis: true,
       unassistedBasis: true
     }))
   };
@@ -73,7 +73,7 @@ export function selectDueReview(input: {
         return false;
       }
       seen.add(key);
-      if (!schedule.serverVerifiedBasis || !schedule.unassistedBasis) return false;
+      if (!schedule.serverNormalizedBasis || !schedule.unassistedBasis) return false;
       if (schedule.status === "completed" || schedule.status === "superseded") return false;
       return reviewStatusForDate(schedule.dueDate, input.calendarDate) !== "scheduled";
     });

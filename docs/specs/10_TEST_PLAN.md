@@ -114,8 +114,11 @@ P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしな�
 ### Assessment
 
 - 管理課題、reference text、content versionを検証する。
+- one-time assessment ticketの期限、nonce、owner、session/item/content/reference/target/focus/locale/epochを検証し、二重利用とcross-itemを拒否する。
 - 音声本体を受け取らない。
+- 空、status欠損、target欠損、別課題、型不正、禁止key、URI、base64、token、過大payloadを拒否する。
 - valid/invalidを正しく分類する。
+- client経由の結果を`server_normalized`として扱い、`provider_attested`や旧`server_verified`へ昇格しない。
 - 主要結果を長期集計待ちから分離する。
 - 保存失敗時にretryable persistence stateを返せる。
 - 再送でattempt、evidence、Program Dayを重複させない。
@@ -146,7 +149,9 @@ P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしな�
 
 - migrationとseedが対象環境で再現できる。
 - user Aはuser Bのsession、attempt、reportをread/writeできない。
-- クライアントはsubscription、trial履歴、active content、server-verified evidenceを直接更新できない。
+- クライアントはsubscription、trial履歴、active content、server-normalized evidenceを直接更新できない。
+- service境界の通常table更新・削除ではprotected stateを変更できず、許可されたtransactional RPCだけが更新する。
+- deletion epochはNULL、stale、巻き戻し、削除後の低値再作成を拒否し、replay照合より先に検証する。
 - parent ownershipを経由する子データも他人が読めない。
 - idempotencyの一意性が並行再送でも壊れない。
 - same-day durable evidenceとProgram Day completionの二重作成を防ぐ。

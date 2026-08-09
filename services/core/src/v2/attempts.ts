@@ -10,7 +10,7 @@ export type AttemptExclusionReason =
   | "guided_retry_missing_source"
   | "guided_retry_source_mismatch"
   | "invalid_attempt_metadata"
-  | "not_server_verified"
+  | "not_server_normalized"
   | "assisted_not_durable"
   | "duplicate_durable_evidence";
 
@@ -72,7 +72,7 @@ export function selectCountedAttempts(attempts: readonly LearningAttempt[]): {
     }
     ordinals.add(ordinalKey);
     accepted.push(attempt);
-    if (!attempt.assisted && !attempt.coachingShown && attempt.serverVerified) {
+    if (!attempt.assisted && !attempt.coachingShown && attempt.serverNormalized) {
       acceptedUnassisted.set(attempt.id, attempt);
     }
   }
@@ -107,7 +107,7 @@ export function selectCountedAttempts(attempts: readonly LearningAttempt[]): {
       source.sessionItemId !== attempt.sessionItemId ||
       source.focusGroupKey !== attempt.focusGroupKey ||
       source.technicalValidity !== "valid" ||
-      !source.serverVerified
+      !source.serverNormalized
     ) {
       excluded.push(exclusion(attempt, "guided_retry_source_mismatch"));
       continue;
@@ -165,8 +165,8 @@ export function selectDurableEvidenceCandidates(input: {
   }> = [];
 
   for (const attempt of counted.accepted) {
-    if (!attempt.serverVerified) {
-      excluded.push(exclusion(attempt, "not_server_verified"));
+    if (!attempt.serverNormalized) {
+      excluded.push(exclusion(attempt, "not_server_normalized"));
       continue;
     }
     if (attempt.assisted || attempt.coachingShown || attempt.attemptRole === "guided_retry") {
@@ -199,11 +199,11 @@ export function isValidImmediateChangeEvidence(input: {
   return (
     input.evidence.kind === "immediate_change" &&
     input.evidence.correctionCycleId !== undefined &&
-    input.evidence.serverVerified &&
+    input.evidence.serverNormalized &&
     input.before.technicalValidity === "valid" &&
     input.after.technicalValidity === "valid" &&
-    input.before.serverVerified &&
-    input.after.serverVerified &&
+    input.before.serverNormalized &&
+    input.after.serverNormalized &&
     !input.before.assisted &&
     input.before.attemptRole !== "guided_retry" &&
     input.after.attemptRole === "guided_retry" &&

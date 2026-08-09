@@ -11,6 +11,7 @@ export function getApiEnv(env = process.env, options = {}) {
     revenueCatSecretKey: env.REVENUECAT_SECRET_KEY,
     revenueCatWebhookAuthToken: env.REVENUECAT_WEBHOOK_AUTH_TOKEN,
     revenueCatProEntitlementId: env.REVENUECAT_PRO_ENTITLEMENT_ID || "pro",
+    v2RevenueCatEntitlementId: env.REVENUECAT_PRO_ENTITLEMENT_ID || null,
     pythonServiceUrl: env.PYTHON_SERVICE_URL,
     pythonServiceApiKey: env.PYTHON_SERVICE_API_KEY,
     openAiApiKey: env.OPENAI_API_KEY,
@@ -19,6 +20,9 @@ export function getApiEnv(env = process.env, options = {}) {
     azureSpeechRegion: env.AZURE_SPEECH_REGION,
     azureSpeechLocale: env.AZURE_SPEECH_LOCALE ?? "en-US",
     azureAssessmentMode: env.AZURE_ASSESSMENT_MODE || "auto",
+    v2AssessmentTicketTtlSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_TICKET_TTL_SECONDS),
+    v2TicketRateLimitWindowSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_RATE_LIMIT_WINDOW_SECONDS),
+    v2TicketRateLimitMax: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_RATE_LIMIT_MAX),
     freeTextDailySoftCap: Number(env.FREE_TEXT_DAILY_SOFT_CAP || 20),
     ttsSignedUrlTtlSeconds: Number(env.TTS_SIGNED_URL_TTL_SECONDS || 3600)
   };
@@ -46,4 +50,10 @@ export function getApiEnv(env = process.env, options = {}) {
   }
 
   return values;
+}
+
+function parseOptionalPositiveInteger(value) {
+  if (value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

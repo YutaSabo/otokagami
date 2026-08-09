@@ -100,14 +100,19 @@ Review Due Dateが到来した復習候補がない日は、5番目のreview枠�
 - AzureがNoMatch/取消ではない。
 - 対象音と必要な判定項目が取得できる。
 - そのattemptのclient IDと内容が整合する。
+- speech tokenと同時に発行した未消費のone-time assessment ticketが、本人・session・item・content version・参照文・対象位置・焦点音・locale・deletion epochへ一致する。
+- Azure最終結果が厳格なallowlistで`server_normalized`になっている。client経由の結果は`provider_attested`ではなく、Azure真正性を暗号学的に証明したとは扱わない。
 
 Azure成功後のDB保存失敗は、音声判定を技術的に無効にしない。端末へ判定結果を保持し、同じclient attempt IDで保存を再送する。durable進捗はサーバー確定まで保留する。
+
+MVPの脅威境界では、one-time ticketと課題bindingが誤送信・単純な横流し・二重保存を抑止する。一方、App Attestまたはprovider署名がないため、改変端末から送られた値の真正性までは証明しない。製品policyが未設定の間はattempt、正規化結果、item進捗、trial開始、correction cycleの構造だけを保存し、短縮、durable evidence、focus state昇格、review生成を`needs_policy`で停止する。
 
 ### 回数
 
 - 1課題最大3有効attempt。
 - 技術的に無効な録音は数えない。
 - 同じclient attemptの再送は新しいattemptにしない。
+- 同じID・同じcanonical payloadは保存済み結果を返し、同じIDで異なるpayloadは競合として拒否する。deletion epochは再送検索より先に検証する。
 - 連続技術失敗時は代替課題またはスキップを提示する。
 
 ## 6. correction cycle

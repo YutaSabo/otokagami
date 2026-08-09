@@ -48,7 +48,8 @@ export interface LearningAttempt {
   assisted: boolean;
   technicalValidity: "valid" | "invalid";
   invalidReason?: string;
-  serverVerified: boolean;
+  serverNormalized: boolean;
+  providerAttested: boolean;
   provider: string;
   assessmentLocale: string;
 }
@@ -77,6 +78,7 @@ export interface ContentCandidate {
   referenceText?: string;
   referenceTextVersion?: string;
   expectedFocusRepresentation?: string;
+  targetLocator?: { wordIndex: number; phonemeIndex: number };
   nextActionKey?: string;
 }
 
@@ -99,7 +101,7 @@ export interface ReviewScheduleCandidate {
   intervalKind: ReviewIntervalKind;
   dueDate: DateOnly;
   status?: ReviewStatus;
-  serverVerifiedBasis: boolean;
+  serverNormalizedBasis: boolean;
   unassistedBasis: boolean;
 }
 
@@ -145,7 +147,7 @@ export interface FocusEvidence {
   promptRole: PromptRole;
   promptContext: string;
   assisted: boolean;
-  serverVerified: boolean;
+  serverNormalized: boolean;
   contentVersionId: string;
   sourceAttemptId?: string;
   correctionCycleId?: string;

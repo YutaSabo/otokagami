@@ -53,11 +53,11 @@ iPhone Otokagami app
 
 ## 3. 音声経路
 
-1. 問題表示時にアプリがAPIからAzure短期トークンを取得する。
+1. 問題表示時にアプリがAPIからAzure短期トークンと、管理session itemへ固定したone-time assessment ticketを取得する。
 2. iOSネイティブモジュールがRecognizerを準備する。
 3. 録音中に16kHz/16bit/mono PCMを端末からAzureへ直接送る。
 4. 録音停止時にstreamを閉じ、Azure最終結果を受け取る。
-5. 音声本体ではなく結果JSONだけを自社APIへ送る。
+5. 音声本体ではなく、ticketとAzure結果JSONだけを自社APIへ送る。
 6. アプリは代表before/afterだけをローカルWAV等で保持する。
 
 禁止:
@@ -71,7 +71,8 @@ iPhone Otokagami app
 
 ```text
 Azure final result
-  → local/server pure normalization
+  → one-time ticket validation
+  → strict server normalization（provider attestationではない）
   → target-one-sound primary result
   → UI display
 
@@ -82,9 +83,11 @@ Azure final result
 
 主要結果は、長期集計、週次レポート、通知更新、複数テーブル更新の完了を待たない。
 
-保存方式はTBDだが、次を満たす。
+S6-07時点の保存境界はservice-role専用のtransactional RPCとし、次を満たす。v2 modeは有効化せず、将来方式を変更する場合も同じ不変条件を維持する。
 
 - client attempt IDで重複排除。
+- ticketはuser/session/item/content/reference/target/focus/locale/epochへ固定し、transactionで一度だけ消費する。
+- request bodyとprovider JSONはparse前上限・strict allowlistを通し、raw Azure JSONを保存・ログ出力しない。
 - 保存失敗時にAzure結果を端末で保持して再送。
 - 録音のやり直し不要。
 - durable進捗は信頼境界で検証後に確定。

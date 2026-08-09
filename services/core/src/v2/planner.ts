@@ -266,7 +266,7 @@ export function evaluateShortening(input: {
       attempt.sessionId === input.sessionId &&
       attempt.focusGroupKey === input.plan.focusGroupKey &&
       planKeys.has(attempt.practiceItemKey) &&
-      attempt.serverVerified &&
+      attempt.serverNormalized &&
       !attempt.assisted &&
       !attempt.coachingShown &&
       attempt.attemptRole !== "guided_retry"

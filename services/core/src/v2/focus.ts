@@ -49,8 +49,8 @@ export function deriveFocusState(input: {
   const exclusions: Array<{ evidenceId: string; reason: string }> = [];
   const safe: FocusEvidence[] = [];
   for (const evidence of relevant) {
-    if (!evidence.serverVerified) {
-      exclusions.push({ evidenceId: evidence.id, reason: "not_server_verified" });
+    if (!evidence.serverNormalized) {
+      exclusions.push({ evidenceId: evidence.id, reason: "not_server_normalized" });
       continue;
     }
     if (evidence.kind !== "immediate_change" && evidence.assisted) {
@@ -195,8 +195,8 @@ function isValidCycleEvidence(
     before.userId === after.userId &&
     before.userId === evidence.userId &&
     before.sessionId === after.sessionId &&
-    before.serverVerified &&
-    after.serverVerified &&
+    before.serverNormalized &&
+    after.serverNormalized &&
     before.technicalValidity === "valid" &&
     after.technicalValidity === "valid" &&
     !before.assisted &&

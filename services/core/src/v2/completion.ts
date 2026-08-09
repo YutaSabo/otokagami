@@ -65,11 +65,11 @@ export function evaluateSessionCompletion(input: {
   const hasVerifiedLearningAttempt = selectCountedAttempts(input.attempts).accepted.some(
     (attempt) =>
       requiredIds.has(attempt.sessionItemId) &&
-      attempt.serverVerified &&
+      attempt.serverNormalized &&
       attempt.technicalValidity === "valid"
   );
   if (!hasVerifiedLearningAttempt) {
-    return ineligible(input.idempotencyKey, "no_valid_server_verified_learning_attempt");
+    return ineligible(input.idempotencyKey, "no_valid_server_normalized_learning_attempt");
   }
 
   return {

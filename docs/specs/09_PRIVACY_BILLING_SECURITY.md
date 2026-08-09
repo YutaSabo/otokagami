@@ -17,7 +17,7 @@
 
 - 初期判定は`en-US`。
 - Azure Subscription Keyはサーバーだけに置く。
-- アプリへ渡すのは短期トークン、region、期限、capabilitiesだけ。
+- アプリへ渡すのは短期トークン、region、期限、capabilitiesと、秘密を含まないone-time assessment ticketだけ。
 - 自社APIは音声ファイル、base64音声、端末音声URIを受け取らない。
 - Azureのデータ取扱いは公開前に最新の提供条件とプライバシー表示を確認する。現時点の外部設定は未確認。
 
@@ -38,7 +38,7 @@
 - Program DayとCalendar Date
 - 管理課題ID・version・焦点音・課題役割
 - 有効/無効attempt、無効理由
-- 音声本体を除くAzure結果と正規化結果
+- raw payloadを除くallowlist済みAzure正規化結果
 - correction cycleとadvice version
 - 発見、即時改善、維持、転移、定着、メンテナンス証拠
 - Review Due Date、日次/Day 7/週次レポート
@@ -52,6 +52,11 @@
 - 秘密、Authorizationヘッダー、短期トークン
 - 国籍・母語による採点補正データ
 - ネイティブらしさの順位
+- Azure raw JSON、assessment ticket nonce、短期token
+
+### Azure結果の信頼境界
+
+音声は端末からAzureへ直接送るため、APIが受け取るAzure結果はclient経由であり、MVPではprovider署名やApp Attestによる真正性証明を持たない。`server_normalized`は、one-time ticketへ固定した管理課題とstrict allowlistでserverが検証した意味に限定する。`provider_attested`はfalseのままとし、真正性を過大表示しない。ticketは誤送信、横断利用、期限切れ、二重消費、stale deletion epochを拒否するが、改変端末への暗号学的耐性を保証しない。
 
 ## 4. 7 active learning days
 
