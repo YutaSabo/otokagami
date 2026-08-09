@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: Request,
-  context: { params: Promise<{ advice_id: string }> | { advice_id: string } }
+  context: { params: Promise<{ advice_id: string }> }
 ) {
   return route(async () => {
     const params = await context.params;

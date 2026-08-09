@@ -28,7 +28,13 @@ export function fail(error) {
         retryable: apiError.retryable
       }
     },
-    { status: apiError.status }
+    {
+      status: apiError.status,
+      headers: {
+        "Cache-Control": "no-store, private",
+        Pragma: "no-cache"
+      }
+    }
   );
 }
 
