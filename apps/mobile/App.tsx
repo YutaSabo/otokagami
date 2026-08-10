@@ -51,6 +51,7 @@ import {
   LEGACY_UI_FEATURES,
   legacyUiGate
 } from "./lib/legacy-ui-gate.mjs";
+import { V2Experience } from "./src/v2/V2Experience";
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -934,6 +935,56 @@ function configureRevenueCatLogging() {
 }
 
 export default function App() {
+  if (!legacyUiGate.legacyUiEnabled) return <V2AuthRoot />;
+  return <LegacyApp />;
+}
+
+function V2AuthRoot() {
+  const [authState, setAuthState] = useState<
+    | { status: "loading" }
+    | { status: "ready"; session: Session }
+    | { status: "error"; message: string }
+  >({ status: "loading" });
+  const [online, setOnline] = useState(true);
+
+  const authenticate = useCallback(async () => {
+    if (!supabaseClient || !mobileConfig.apiBaseUrl) {
+      setAuthState({ status: "error", message: "公開接続設定を確認できません。" });
+      return;
+    }
+    try {
+      setAuthState({ status: "ready", session: await getAnonymousSession(supabaseClient) });
+    } catch {
+      setAuthState({ status: "error", message: "匿名認証を確認できませんでした。" });
+    }
+  }, []);
+
+  useEffect(() => { void authenticate(); }, [authenticate]);
+  useEffect(() => {
+    void Network.getNetworkStateAsync().then((state) => {
+      setOnline(Boolean(state.isConnected && state.isInternetReachable !== false));
+    }).catch(() => setOnline(false));
+    const subscription = Network.addNetworkStateListener((state) => {
+      setOnline(Boolean(state.isConnected && state.isInternetReachable !== false));
+    });
+    return () => subscription.remove();
+  }, []);
+
+  if (authState.status === "loading") return <LoadingScreen message="匿名認証を確認しています" />;
+  if (authState.status === "error") {
+    return <ErrorScreen message={authState.message} isOnline={online} onRetry={authenticate} />;
+  }
+  return (
+    <V2Experience
+      apiBaseUrl={mobileConfig.apiBaseUrl}
+      getAccessToken={() => getCurrentAccessToken(authState.session)}
+      userId={authState.session.user.id}
+      online={online}
+    />
+  );
+}
+
+function LegacyApp() {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [bootstrapState, setBootstrapState] = useState<AppBootstrapState>({ status: "loading" });
   const streamSessionRef = useRef(new PronunciationSessionTracker());

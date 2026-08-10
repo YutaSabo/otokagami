@@ -16,6 +16,7 @@
     "build": "expo config --type public > /dev/null"
   },
   "dependencies": {
+    "@pronunciation-mirror/core": "0.1.0",
     "@supabase/supabase-js": "^2.110.0",
     "azure-pronunciation-stream": "file:modules/azure-pronunciation-stream",
     "expo": "~57.0.4",
@@ -28,7 +29,9 @@
     "expo-notifications": "~57.0.3",
     "expo-secure-store": "~57.0.0",
     "expo-sharing": "~57.0.3",
+    "expo-sqlite": "~57.0.0",
     "expo-updates": "~57.0.6",
+    "otokagami-protected-storage": "file:modules/otokagami-protected-storage",
     "react": "19.2.3",
     "react-native": "0.86.0",
     "react-native-purchases": "^10.4.1",
