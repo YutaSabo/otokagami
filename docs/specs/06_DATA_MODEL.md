@@ -281,6 +281,8 @@ Focus stateは、現在段階、最後の無補助成功日、次の課題役割
 
 無料体験履歴、購読状態、不正再付与防止に必要な最小データは別責務として扱い、学習削除だけで再付与しない。保持の法的根拠と期間はTBD。
 
+S6-08では、user単位lock、deletion request ID、deletion epoch増加、v1/v2/legacy学習行の削除、削除件数保存を1つのservice-role専用transactionへまとめる。同一requestの再送ではepochを二重増加させない。attempt保存を含むv2 mutationも同じuser lockとepoch境界を使い、削除前保存または削除後拒否のどちらかへ収束させる。端末は別のdurable deletion barrierを保持し、旧epochのSQLite outbox、snapshot、音声index/fileを消去してから同じrequest IDを再送する。
+
 ### 書き出し
 
 ユーザー設定、学習セッション、判定結果、改善状態、復習、レポートを含める。音声ファイル、秘密、内部認証情報、他ユーザーデータを含めない。
@@ -297,14 +299,11 @@ Focus stateは、現在段階、最後の無補助成功日、次の課題役割
 
 現在DBには`daily_sessions`、`attempts`、`phoneme_state`、自由入力、ゲーミフィケーション、Piper/OpenAIキャッシュ等の旧概念がある。再利用・変換・無効化・削除の判断は第4段階以降で行う。
 
-Hosted Supabaseの適用状態は未確認。第3段階ではmigration、Seed、RLSを変更しない。
+`otokagami-staging`にはS6-07までのadditive v2 schemaが適用済みで、v2 modeは`off`である。S6-08のatomic export/deleteとlifecycle hardening migrationはローカル・staging復元cloneで検証済みだが、Hosted適用は直前承認待ち。旧v1/legacy行はbackfillせず保持し、旧`Otokagami` projectは凍結する。
 
 ## 17. TBD
 
-- 具体的なテーブル・カラム名
-- migration SQL
-- RPC、outbox、キュー、再計算の選択
 - 保持データの法的期間
 - 判定しきい値
-- Hosted Supabaseの現状
-- 旧データの移行・削除方針
+- 実機fixtureに基づくprovider projection上限、capture/submission期限、SQLite保持上限
+- アカウント退会と法的保持を含む全体削除仕様

@@ -57,7 +57,7 @@ iPhone Otokagami app
 2. iOSネイティブモジュールがRecognizerを準備する。
 3. 録音中に16kHz/16bit/mono PCMを端末からAzureへ直接送る。
 4. 録音停止時にstreamを閉じ、Azure最終結果を受け取る。
-5. 音声本体ではなく、ticketとAzure結果JSONだけを自社APIへ送る。
+5. 音声本体ではなく、ticketとversion付きstrict projectionだけを自社APIへ送る。Azure raw JSON全体は端末メモリ上でprojection後に破棄する。
 6. アプリは代表before/afterだけをローカルWAV等で保持する。
 
 禁止:
@@ -83,7 +83,7 @@ Azure final result
 
 主要結果は、長期集計、週次レポート、通知更新、複数テーブル更新の完了を待たない。
 
-S6-07時点の保存境界はservice-role専用のtransactional RPCとし、次を満たす。v2 modeは有効化せず、将来方式を変更する場合も同じ不変条件を維持する。
+S6-08／Stage 7時点の保存境界は、Application SupportのSQLite outboxとservice-role専用transactional RPCを組み合わせ、次を満たす。v2 modeは有効化せず、将来方式を変更する場合も同じ不変条件を維持する。
 
 - client attempt IDで重複排除。
 - ticketはuser/session/item/content/reference/target/focus/locale/epochへ固定し、transactionで一度だけ消費する。
@@ -92,6 +92,8 @@ S6-07時点の保存境界はservice-role専用のtransactional RPCとし、次�
 - 録音のやり直し不要。
 - durable進捗は信頼境界で検証後に確定。
 - UIは保存保留を非妨害的に示す。
+- capture期限とsubmission期限を分離し、ACK消失時は同じticket nonce・client attempt ID・payloadで再送する。
+- deletion barrier中はoutbox送信を止め、server epochが進んだ旧queueを消去する。
 
 ## 5. レイヤー責務
 
@@ -132,7 +134,8 @@ S6-07時点の保存境界はservice-role専用のtransactional RPCとし、次�
 - 14日復習完了後に早期削除可。
 - 学習データ削除時に即時削除。
 - ファイル欠損を画面全体の失敗にしない。
-- バックアップや端末移行での扱いはTBD。長期録音ライブラリは作らない。
+- Application Support配下へ置き、iOS file protectionとbackup除外を適用する。実機上の属性確認はStage 7受入待ち。
+- SQLiteにはopaque file keyだけを保存し、URIをoutbox、API、DB、export、通常logへ含めない。長期録音ライブラリは作らない。
 
 ## 9. 環境変数と秘密
 

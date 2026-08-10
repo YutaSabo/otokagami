@@ -1,0 +1,267 @@
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import test from "node:test";
+
+import { createV2AttemptPipeline } from "../lib/v2-attempt-pipeline.mjs";
+import { V2_AUDIO_INDEX_SCHEMA, audioDeletionReason } from "../lib/v2-audio-lifecycle.mjs";
+import { V2_DELETION_SCHEMA, canSendLearningCommands, createV2DeletionCoordinator, nextDeletionAction } from "../lib/v2-deletion.mjs";
+import { V2_OUTBOX_SCHEMA, createV2OutboxRepository, createV2OutboxWorker } from "../lib/v2-outbox.mjs";
+
+test("SQLite schema has no audio, URI, token, authorization, nonce, or raw-provider value column", () => {
+  const normalizedColumns = [...V2_OUTBOX_SCHEMA.matchAll(/^\s*([a-z][a-z0-9_]*)\s+(?:TEXT|INTEGER|REAL)/gim)]
+    .map((match) => match[1]);
+  for (const column of normalizedColumns) {
+    assert.doesNotMatch(column, /audio|uri|token|authorization|nonce|raw.*(?:json|payload|provider)/i);
+  }
+  assert.match(V2_OUTBOX_SCHEMA, /protected_material_handle/);
+  assert.match(V2_AUDIO_INDEX_SCHEMA, /file_key/);
+  assert.doesNotMatch(V2_AUDIO_INDEX_SCHEMA, /file_uri|audio_uri/i);
+});
+
+test("enqueue and local result are one transaction; FIFO dependencies wait for confirmation", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits(syncConfig());
+  await repository.enqueue(command("a", null), localResult());
+  await repository.enqueue(command("b", "a"), localResult());
+  assert.equal((await repository.get("a")).sync_state, "pending");
+
+  const first = await repository.leaseNext({ leaseId: "lease-a", now: iso(0), leaseExpiresAt: iso(60) });
+  assert.equal(first.command_id, "a");
+  const whileBlocked = await repository.leaseNext({ leaseId: "lease-b", now: iso(0), leaseExpiresAt: iso(60) });
+  assert.equal(whileBlocked, undefined);
+  await repository.acknowledge("a", "lease-a", iso(1));
+  const second = await repository.leaseNext({ leaseId: "lease-b", now: iso(1), leaseExpiresAt: iso(60) });
+  assert.equal(second.command_id, "b");
+});
+
+test("outbox capacity is enforced in UTF-8 bytes rather than character count", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits({ ...syncConfig(), maxBytes: 20 });
+  const oversized = control("utf8", "session_completion", null);
+  oversized.controlPayload = { message: "あいうえお" };
+  await assert.rejects(() => repository.enqueueControl(oversized), (error) => error.code === "OUTBOX_CAPACITY_REACHED");
+});
+
+test("review completion waits for the confirmed attempt and session completion waits for review", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits(syncConfig());
+  await repository.enqueue(command("attempt", null), localResult());
+  await repository.enqueueControl(control("review", "review_completion", "attempt"));
+  await repository.enqueueControl(control("complete", "session_completion", "review"));
+  assert.equal((await repository.leaseNext({ leaseId: "a", now: iso(0), leaseExpiresAt: iso(60) })).command_id, "attempt");
+  await repository.acknowledge("attempt", "a", iso(1), "server-attempt");
+  const review = await repository.leaseNext({ leaseId: "r", now: iso(1), leaseExpiresAt: iso(60) });
+  assert.equal(review.command_id, "review");
+  assert.equal(review.dependency_server_resource_id, "server-attempt");
+  await repository.acknowledge("review", "r", iso(2), "server-review");
+  assert.equal((await repository.leaseNext({ leaseId: "c", now: iso(2), leaseExpiresAt: iso(60) })).command_id, "complete");
+});
+
+test("single-lease worker recovers ACK loss and purges protected material after confirmation", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits(syncConfig());
+  await repository.enqueue(command("a", null), localResult());
+  const deleted = [];
+  let sends = 0;
+  const worker = createV2OutboxWorker({
+    repository,
+    api: {
+      async send() { sends += 1; },
+      classify() { return "retryable"; }
+    },
+    protectedMaterialStore: {
+      async read() { return "ephemeral-nonce"; },
+      async delete(handle) { deleted.push(handle); }
+    },
+    clock: { now: () => iso(0), id: () => "lease-a", addSeconds: (_, seconds) => iso(seconds) },
+    config: { maxItems: 20, maxBytes: 20_000, submissionWindowSeconds: 600, initialBackoffSeconds: 1, maxBackoffSeconds: 30 }
+  });
+  const [one, two] = await Promise.all([worker.runOnce(), worker.runOnce()]);
+  assert.deepEqual(new Set([one.status, two.status]), new Set(["confirmed", "busy"]));
+  assert.equal(sends, 1);
+  assert.deepEqual(deleted, ["material-a"]);
+  const saved = await repository.get("a");
+  assert.equal(saved.state, "confirmed");
+  assert.equal(saved.strict_projection_json, null);
+  assert.equal(saved.protected_material_handle, null);
+});
+
+test("expired submissions become permanent failures instead of remaining stuck", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits(syncConfig());
+  const expired = command("expired", null);
+  expired.submissionExpiresAt = iso(1);
+  await repository.enqueue(expired, localResult());
+  const worker = createV2OutboxWorker({
+    repository,
+    api: { async send() { throw new Error("must not send"); }, classify() { return "retryable"; } },
+    protectedMaterialStore: { async read() { return null; }, async delete() {} },
+    clock: { now: () => iso(2), id: () => "lease-expired", addSeconds: (_, seconds) => iso(2 + seconds) },
+    config: { maxItems: 20, maxBytes: 20_000, submissionWindowSeconds: 600, initialBackoffSeconds: 1, maxBackoffSeconds: 30 }
+  });
+  assert.deepEqual(await worker.runOnce(), { status: "permanent_failure", code: "SUBMISSION_EXPIRED" });
+  assert.equal((await repository.get("expired")).state, "permanent_failure");
+});
+
+test("deletion barrier and epoch state recover deterministically after crashes", () => {
+  assert.equal(canSendLearningCommands({ state: "server_pending" }), false);
+  assert.equal(canSendLearningCommands({ state: "idle" }), true);
+  assert.equal(nextDeletionAction({ state: "local_cleanup", local_epoch: 2 }, 2), "finish_local_cleanup");
+  assert.equal(nextDeletionAction({ state: "server_pending", local_epoch: 2 }, 2), "retry_server_delete");
+  assert.equal(nextDeletionAction({ state: "server_confirmed", local_epoch: 2 }, 3), "commit_server_epoch");
+  assert.equal(nextDeletionAction({ state: "idle", local_epoch: 2 }, 3), "purge_stale_local");
+});
+
+test("deletion cleanup is locally atomic and resumes the same server request after a lost response", async () => {
+  const db = sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_AUDIO_INDEX_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository = createV2OutboxRepository(db);
+  repository.setLimits(syncConfig());
+  await db.runAsync(
+    "INSERT INTO v2_local_snapshots(user_id,deletion_epoch,contract_version,snapshot_json,updated_at) VALUES (?,?,?,?,?)",
+    "user", 0, "contract-v1", "{}", iso(0)
+  );
+  await repository.enqueue(command("delete-me", null), localResult());
+  await db.runAsync(
+    `INSERT INTO v2_audio_index(file_key,user_id,correction_cycle_id,content_version_id,attempt_role,
+       created_at,delete_after,availability) VALUES (?,?,?,?,?,?,?,'available')`,
+    "opaque.wav", "user", "local-cycle", "content", "before", iso(0), iso(600)
+  );
+  const deletedFiles = [];
+  const audio = {
+    listFileKeysForUser: async (userId) => db.getAllAsync(
+      "SELECT file_key FROM v2_audio_index WHERE user_id = ?", userId
+    ),
+    deleteIndexForUser: (userId) => db.runAsync("DELETE FROM v2_audio_index WHERE user_id = ?", userId),
+    async deleteFiles(keys) { deletedFiles.push(...keys); }
+  };
+  let calls = 0;
+  const api = {
+    async deleteLearningData(requestId, expectedEpoch) {
+      calls += 1;
+      assert.equal(requestId, "delete-request");
+      assert.equal(expectedEpoch, 0);
+      if (calls === 1) throw Object.assign(new Error("lost response"), { code: "NETWORK_UNAVAILABLE" });
+      return { deletion_epoch: 1 };
+    }
+  };
+  const coordinator = createV2DeletionCoordinator({ database: db, outbox: repository, audio, api, clock: { now: () => iso(1) } });
+  await coordinator.begin({ requestId: "delete-request", userId: "user", localEpoch: 0 });
+  await assert.rejects(() => coordinator.resume(), /lost response/);
+  assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_outbox_commands")).n, 0);
+  assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_local_snapshots")).n, 0);
+  assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_audio_index")).n, 0);
+  assert.deepEqual(deletedFiles, ["opaque.wav"]);
+  assert.equal((await db.getFirstAsync("SELECT state FROM v2_deletion_control WHERE singleton_id=1")).state, "server_pending");
+  const completed = await coordinator.resume();
+  assert.deepEqual(completed, { status: "completed", deletionEpoch: 1 });
+  const control = await db.getFirstAsync("SELECT state,local_epoch,pending_audio_keys_json FROM v2_deletion_control WHERE singleton_id=1");
+  assert.deepEqual({ ...control }, { state: "idle", local_epoch: 1, pending_audio_keys_json: "[]" });
+  assert.equal(calls, 2);
+});
+
+test("local audio policy expires at 30 days, Day 14, or missing without exposing paths", () => {
+  assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:00Z"), null);
+  assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: "2026-08-24T00:00:00Z" }, "2026-08-24T00:00:00Z"), "day_14_completed");
+  assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-08-10T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:01Z"), "retention_expired");
+  assert.equal(audioDeletionReason({ availability: "missing", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:00Z"), "not_available");
+});
+
+test("attempt pipeline displays local result and schedules sync without awaiting server ACK", async () => {
+  const events = [];
+  let releaseSync;
+  const sync = new Promise((resolve) => { releaseSync = resolve; });
+  const pipeline = createV2AttemptPipeline({
+    api: { async speechToken() { return ticket(); } },
+    native: {
+      async prepare() {}, async start() {}, async cancel() {}, async deleteTemporary() {},
+      async finish() { return { rawJson: { RecognitionStatus: "Success" }, localAudioUri: "temporary-local-file" }; }
+    },
+    normalizer() {
+      return {
+        projection: { projectionVersion: "projection-v1", recognitionStatus: "success", displayText: "light", target: null },
+        normalized: {
+          expectedFocusRepresentation: "l", observedCandidate: "r", targetScore: 60,
+          resultLabel: "measured", nextActionKey: "tongue-tip", normalizerVersion: "normalizer-v1"
+        },
+        metrics: { providerPayloadBytes: 800, projectionBytes: 160 }
+      };
+    },
+    outbox: { async enqueue() { events.push("enqueue"); } },
+    protectedTicketStore: { async save() {}, async delete() {} },
+    ids: { materialHandle: () => "handle", requestId: () => "request", commandId: () => "command", clientAttemptId: () => "attempt" },
+    clock: { now: () => iso(0) },
+    triggerSync: async () => { events.push("sync-started"); await sync; }
+  });
+  await pipeline.start({ item: item() });
+  const completed = await pipeline.finish({
+    payloadByteLimit: 1000, userId: "user", sessionId: "session", deletionEpoch: 0,
+    onLocalResult() { events.push("local-result"); }
+  });
+  assert.equal(completed.commandId, "command");
+  assert.deepEqual(events, ["enqueue", "local-result", "sync-started"]);
+  releaseSync();
+});
+
+function sqliteAdapter() {
+  const db = new DatabaseSync(":memory:");
+  return {
+    async execAsync(sql) { db.exec(sql); },
+    async runAsync(sql, ...params) { return db.prepare(sql).run(...params); },
+    async getFirstAsync(sql, ...params) { return db.prepare(sql).get(...params); },
+    async getAllAsync(sql, ...params) { return db.prepare(sql).all(...params); },
+    async withTransactionAsync(operation) {
+      db.exec("BEGIN");
+      try { const result = await operation(); db.exec("COMMIT"); return result; }
+      catch (error) { db.exec("ROLLBACK"); throw error; }
+    }
+  };
+}
+
+function command(id, dependency) {
+  return {
+    commandId: id, commandKind: "attempt", userId: "user", clientAttemptId: `attempt-${id}`,
+    sessionId: "session", sessionItemId: "item", contentVersionId: "content", focusGroupKey: "focus",
+    assessmentLocale: "en-US", deletionEpoch: 0, referenceVersion: "reference-v1",
+    normalizerVersion: "normalizer-v1", projectionVersion: "projection-v1", contractVersion: "contract-v1",
+    assessmentTicketId: `ticket-${id}`, protectedMaterialHandle: `material-${id}`,
+    capturedAt: iso(0),
+    captureExpiresAt: iso(60), submissionExpiresAt: iso(600), dependencyCommandId: dependency,
+    strictProjection: { projectionVersion: "projection-v1", recognitionStatus: "success" }, createdAt: iso(0)
+  };
+}
+function control(id, kind, dependency) {
+  return {
+    commandId: id, commandKind: kind, userId: "user", sessionId: "session", sessionItemId: "item",
+    contentVersionId: "content", focusGroupKey: "focus", assessmentLocale: "en-US", deletionEpoch: 0,
+    referenceVersion: "reference-v1", normalizerVersion: "normalizer-v1", projectionVersion: "control-v1",
+    contractVersion: "contract-v1", submissionExpiresAt: iso(600), dependencyCommandId: dependency,
+    controlPayload: { completion_idempotency_key: `${id}-key` }, createdAt: iso(0)
+  };
+}
+function localResult() { return { expectedFocus: "l", observedCandidate: "r", targetScore: 70, resultLabel: "measured", nextActionKey: "tongue" }; }
+function syncConfig() { return { maxItems: 20, maxBytes: 20_000, submissionWindowSeconds: 600, initialBackoffSeconds: 1, maxBackoffSeconds: 30 }; }
+function iso(seconds) { return new Date(seconds * 1000).toISOString(); }
+function ticket() {
+  return {
+    token: "ephemeral", region: "region", locale: "en-US", reference_text: "light", contract_version: "contract-v1",
+    assessment_ticket: { id: "ticket", nonce: "nonce", expires_at: iso(60), submission_expires_at: iso(600) }
+  };
+}
+function item() {
+  return {
+    id: "item", target_locator: { wordIndex: 0, phonemeIndex: 0 }, reference_text: "light",
+    content_version_id: "content", practice_item_key: "light", expected_focus_representation: "l",
+    focus_group_key: "r-l", next_action_key: "tongue", reference_text_version: "reference-v1"
+  };
+}

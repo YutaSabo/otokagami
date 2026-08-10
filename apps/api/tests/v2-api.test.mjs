@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AZURE_V2_CAPACITY_REFERENCE } from "@pronunciation-mirror/core/v2";
+import {
+  AZURE_V2_CAPACITY_REFERENCE,
+  AZURE_V2_TEST_PAYLOAD_MAX_BYTES,
+  projectAzureFocusPayload
+} from "@pronunciation-mirror/core/v2";
 import { ApiError } from "../lib/http.mjs";
 import {
   createEmptyV2ContentRepository,
   createV2Repository,
   getV2Mode,
   handleV2,
-  V2_ATTEMPT_REQUEST_MAX_BYTES,
   v2CompleteSession,
+  v2CompleteReview,
   v2DailySession,
+  v2DeleteLearningData,
+  v2ExportLearningData,
   v2PersistAttempt,
   v2SpeechToken
 } from "../lib/v2.mjs";
@@ -23,6 +29,13 @@ const CLIENT_ATTEMPT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const COMPLETION = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const TICKET = "12121212-1212-4212-8212-121212121212";
 const TICKET_NONCE = "34343434-3434-4434-8434-343434343434";
+const REVIEW_SCHEDULE = "45454545-4545-4545-8545-454545454545";
+const REVIEW_ATTEMPT = "46464646-4646-4646-8646-464646464646";
+const AZURE_V2_PROJECTION = projectAzureFocusPayload({
+  providerPayload: AZURE_V2_CAPACITY_REFERENCE,
+  targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+  payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
+}).projection;
 const ENV = {
   SUPABASE_URL: "https://example.invalid",
   SUPABASE_ANON_KEY: "public-test-key",
@@ -32,8 +45,18 @@ const ENV = {
   AZURE_ASSESSMENT_MODE: "mock",
   OTOKAGAMI_V2_MODE: "learning",
   OTOKAGAMI_V2_TICKET_TTL_SECONDS: "600",
+  OTOKAGAMI_V2_CAPTURE_WINDOW_SECONDS: "120",
+  OTOKAGAMI_V2_SUBMISSION_WINDOW_SECONDS: "86400",
+  OTOKAGAMI_V2_SPEECH_TOKEN_TTL_SECONDS: "600",
+  OTOKAGAMI_V2_PROVIDER_PROJECTION_MAX_BYTES: "32768",
   OTOKAGAMI_V2_RATE_LIMIT_WINDOW_SECONDS: "60",
   OTOKAGAMI_V2_RATE_LIMIT_MAX: "3",
+  OTOKAGAMI_V2_OUTBOX_RETENTION_SECONDS: "86400",
+  OTOKAGAMI_V2_OUTBOX_MAX_ITEMS: "100",
+  OTOKAGAMI_V2_OUTBOX_MAX_BYTES: "1048576",
+  OTOKAGAMI_V2_OUTBOX_BACKOFF_BASE_SECONDS: "5",
+  OTOKAGAMI_V2_OUTBOX_BACKOFF_MAX_SECONDS: "300",
+  OTOKAGAMI_V2_EXPORT_MAX_BYTES: "1048576",
   REVENUECAT_PRO_ENTITLEMENT_ID: "pro"
 };
 
@@ -44,7 +67,7 @@ test("v2 mode defaults and invalid values fail closed", () => {
 });
 
 test("all v2 routes reject unauthenticated requests in enabled mode", async () => {
-  for (const kind of ["bootstrap", "access-status", "daily-session", "speech-token", "attempts", "session-completion", "progress", "reports"]) {
+  for (const kind of ["bootstrap", "access-status", "daily-session", "speech-token", "attempts", "session-completion", "review-completion", "progress", "reports", "export", "delete-learning-data"]) {
     const response = await handleV2(kind, {
       request: requestFor(kind, {}, false),
       env: ENV,
@@ -214,6 +237,8 @@ test("speech token accepts only an owned managed item and fixes reference text a
   assert.equal(result.locale, "en-US");
   assert.equal(result.reference_text, "think now");
   assert.equal(result.token, "mock-speech-token");
+  assert.equal(result.provider_projection_max_bytes, 32768);
+  assert.equal(result.contract_version, "2026-08-s6-08-stage-7");
   assert.match(result.assessment_ticket.id, /^[0-9a-f-]{36}$/);
   assert.match(result.assessment_ticket.nonce, /^[0-9a-f-]{36}$/);
   const arbitrary = await v2SpeechToken({
@@ -222,6 +247,49 @@ test("speech token accepts only an owned managed item and fixes reference text a
     repository
   }).catch((error) => error);
   assert.equal(arbitrary.code, "BAD_REQUEST");
+});
+
+test("speech token checks ticket eligibility before Azure and abandons its reservation after token failure", async () => {
+  let azureCalls = 0;
+  const ineligible = fakeRepository({ activeSession: sessionFixture(), ticketIssueError: "VALID_ATTEMPT_LIMIT_REACHED" });
+  const blocked = await v2SpeechToken({
+    request: requestFor("speech-token", { session_item_id: ITEM }),
+    env: { ...ENV, AZURE_ASSESSMENT_MODE: "auto" },
+    repository: ineligible,
+    fetchImpl: async () => { azureCalls += 1; throw new Error("must not run"); }
+  }).catch((error) => error);
+  assert.equal(blocked.code, "VALID_ATTEMPT_LIMIT_REACHED");
+  assert.equal(azureCalls, 0);
+
+  const reserved = fakeRepository({ activeSession: sessionFixture() });
+  const unavailable = await v2SpeechToken({
+    request: requestFor("speech-token", { session_item_id: ITEM }),
+    env: { ...ENV, AZURE_ASSESSMENT_MODE: "auto" },
+    repository: reserved,
+    fetchImpl: async () => { azureCalls += 1; throw new Error("network"); }
+  }).catch((error) => error);
+  assert.equal(unavailable.code, "AZURE_TOKEN_UNAVAILABLE");
+  assert.equal(azureCalls, 1);
+  assert.equal(reserved.calls.abandonedTickets.length, 1);
+});
+
+test("live v2 assessment fails closed when verified payload, expiry or outbox policy is absent", async () => {
+  for (const missing of [
+    "OTOKAGAMI_V2_CAPTURE_WINDOW_SECONDS",
+    "OTOKAGAMI_V2_SUBMISSION_WINDOW_SECONDS",
+    "OTOKAGAMI_V2_SPEECH_TOKEN_TTL_SECONDS",
+    "OTOKAGAMI_V2_PROVIDER_PROJECTION_MAX_BYTES",
+    "OTOKAGAMI_V2_OUTBOX_RETENTION_SECONDS"
+  ]) {
+    const env = { ...ENV };
+    delete env[missing];
+    const error = await v2SpeechToken({
+      request: requestFor("speech-token", { session_item_id: ITEM }),
+      env,
+      repository: fakeRepository({ activeSession: sessionFixture() })
+    }).catch((caught) => caught);
+    assert.equal(error.code, "SERVER_ENV_MISSING", missing);
+  }
 });
 
 test("attempt contract rejects client-selected trust and role fields and requires a one-time assessment ticket", async () => {
@@ -236,7 +304,7 @@ test("attempt contract rejects client-selected trust and role fields and require
       session_item_id: ITEM,
       client_attempt_id: CLIENT_ATTEMPT,
       deletion_epoch: 0,
-      provider_result: AZURE_V2_CAPACITY_REFERENCE
+      provider_projection: AZURE_V2_PROJECTION
     }), env: ENV, repository
   }).catch((error) => error);
   assert.equal(noTicket.code, "ASSESSMENT_TICKET_REQUIRED");
@@ -266,10 +334,10 @@ test("attempt replay is idempotent, changed canonical payload conflicts, invalid
     v2PersistAttempt({ request: request(), env: ENV, repository })
   ]);
   assert.equal([first.replayed, replay.replayed].filter(Boolean).length, 1);
-  const changedProvider = structuredClone(AZURE_V2_CAPACITY_REFERENCE);
-  changedProvider.NBest[0].Words[0].Phonemes[0].PronunciationAssessment.AccuracyScore = 47;
+  const changedProvider = structuredClone(AZURE_V2_PROJECTION);
+  changedProvider.target.accuracyScore = 47;
   const conflict = await v2PersistAttempt({
-    request: requestFor("attempts", { ...attemptBody(), provider_result: changedProvider }),
+    request: requestFor("attempts", { ...attemptBody(), provider_projection: changedProvider }),
     env: ENV,
     repository
   }).catch((error) => error);
@@ -277,7 +345,15 @@ test("attempt replay is idempotent, changed canonical payload conflicts, invalid
 
   const invalidRepository = fakeRepository({ activeSession: sessionFixture(), emulateAttemptRules: true });
   await v2PersistAttempt({
-    request: requestFor("attempts", { ...attemptBody(), provider_result: { RecognitionStatus: "NoMatch" } }),
+    request: requestFor("attempts", {
+      ...attemptBody(),
+      provider_projection: {
+        projectionVersion: "azure-en-us-focus-projection-v1",
+        recognitionStatus: "no_match",
+        displayText: null,
+        target: null
+      }
+    }),
     env: ENV,
     repository: invalidRepository
   });
@@ -301,7 +377,7 @@ test("attempt rejects stale deletion epoch and forbidden provider fields before 
   const stale = await v2PersistAttempt({ request: requestFor("attempts", attemptBody()), env: ENV, repository }).catch((error) => error);
   assert.equal(stale.code, "DELETION_EPOCH_CONFLICT");
   const forbidden = await v2PersistAttempt({
-    request: requestFor("attempts", { ...attemptBody(), provider_result: { audio: "base64" } }),
+    request: requestFor("attempts", { ...attemptBody(), provider_projection: { audio: "base64" } }),
     env: ENV,
     repository: fakeRepository({ activeSession: sessionFixture() })
   }).catch((error) => error);
@@ -314,7 +390,7 @@ test("attempt request body is rejected before JSON parsing when the declared siz
     headers: {
       authorization: "Bearer user-token",
       "content-type": "application/json",
-      "content-length": String(V2_ATTEMPT_REQUEST_MAX_BYTES + 1)
+      "content-length": String(Number(ENV.OTOKAGAMI_V2_PROVIDER_PROJECTION_MAX_BYTES) + 4_097)
     },
     body: "{}"
   });
@@ -344,6 +420,86 @@ test("session completion sends only server-derived date, hash and idempotency in
   assert.equal(repository.calls.completions[1].p_completion_payload_sha256, repository.calls.completions[0].p_completion_payload_sha256);
 });
 
+test("review completion is bound to the owned review snapshot and server-derived calendar date", async () => {
+  const session = sessionFixture();
+  session.items[0] = {
+    ...session.items[0],
+    prompt_role: "review",
+    slot_role: "review",
+    review_schedule_id: REVIEW_SCHEDULE,
+    review_source_evidence_id: "47474747-4747-4747-8747-474747474747",
+    review_due_date: "2026-08-09",
+    review_interval_kind: "day_1"
+  };
+  const repository = fakeRepository({ activeSession: session });
+  const result = await v2CompleteReview({
+    request: requestFor("review-completion", {
+      review_schedule_id: REVIEW_SCHEDULE,
+      session_item_id: ITEM,
+      attempt_id: REVIEW_ATTEMPT,
+      deletion_epoch: 0,
+      completion_idempotency_key: COMPLETION
+    }),
+    env: ENV,
+    repository,
+    now: new Date("2026-08-09T03:00:00Z")
+  });
+  assert.equal(result.replayed, false);
+  assert.deepEqual(repository.calls.reviewCompletions[0], {
+    p_user_id: USER,
+    p_review_schedule_id: REVIEW_SCHEDULE,
+    p_session_item_id: ITEM,
+    p_attempt_id: REVIEW_ATTEMPT,
+    p_deletion_epoch: 0,
+    p_completion_idempotency_key: COMPLETION,
+    p_completed_at: "2026-08-09T03:00:00.000Z",
+    p_calendar_date: "2026-08-09"
+  });
+});
+
+test("v2 export and delete use authenticated ownership, redact service inputs and keep delete idempotency explicit", async () => {
+  const repository = fakeRepository();
+  const exported = await v2ExportLearningData({
+    request: requestFor("export", {}),
+    env: { ...ENV, OTOKAGAMI_V2_MODE: "read_only" },
+    repository,
+    now: new Date("2026-08-09T04:00:00Z")
+  });
+  assert.equal(exported.schema_version, "v2");
+  assert.deepEqual(Object.keys(repository.calls.exports[0]).sort(), ["p_max_bytes", "p_server_now", "p_user_id"]);
+
+  const deletionRequestId = "56565656-5656-4656-8656-565656565656";
+  await assert.rejects(() => v2DeleteLearningData({
+    request: requestFor("delete-learning-data", {
+      confirm: true,
+      deletion_request_id: deletionRequestId,
+      expected_deletion_epoch: 4
+    }),
+    env: { ...ENV, OTOKAGAMI_V2_MODE: "read_only" },
+    repository,
+    now: new Date("2026-08-09T04:00:00Z")
+  }), (error) => error.code === "V2_READ_ONLY");
+
+  const deleted = await v2DeleteLearningData({
+    request: requestFor("delete-learning-data", {
+      confirm: true,
+      deletion_request_id: deletionRequestId,
+      expected_deletion_epoch: 4
+    }),
+    env: { ...ENV, OTOKAGAMI_V2_MODE: "learning" },
+    repository,
+    now: new Date("2026-08-09T04:00:00Z")
+  });
+  assert.equal(deleted.deletion_epoch, 5);
+  assert.deepEqual(repository.calls.deletions[0], {
+    p_user_id: USER,
+    p_deletion_request_id: deletionRequestId,
+    p_expected_deletion_epoch: 4,
+    p_server_now: "2026-08-09T04:00:00.000Z"
+  });
+  assert.doesNotMatch(JSON.stringify({ exported, deleted }), /nonce|payload_hash|authorization|token|audio|file_uri/i);
+});
+
 function requestFor(kind, body = {}, authorized = true) {
   const method = ["access-status", "progress", "reports"].includes(kind) ? "GET" : "POST";
   return new Request(`http://api.test/api/v2/${kind}`, {
@@ -360,7 +516,8 @@ function attemptBody() {
     assessment_ticket_id: TICKET,
     assessment_ticket_nonce: TICKET_NONCE,
     deletion_epoch: 0,
-    provider_result: AZURE_V2_CAPACITY_REFERENCE
+    captured_at: "2026-08-09T00:00:01.000Z",
+    provider_projection: AZURE_V2_PROJECTION
   };
 }
 
@@ -450,7 +607,7 @@ function fakeRepository(options = {}) {
   let activeSession = options.activeSession ?? null;
   const attempts = new Map();
   let validCount = 0;
-  const calls = { attempts: [], completions: [], createdItems: [], reviewRefreshes: [] };
+  const calls = { attempts: [], completions: [], reviewCompletions: [], createdItems: [], reviewRefreshes: [] };
   return {
     calls,
     async authenticate(token) {
@@ -514,9 +671,19 @@ function fakeRepository(options = {}) {
       return { session_id: SESSION, changed: Boolean(command.p_review_item), replayed: false };
     },
     async issueAssessmentTicket(command) {
+      if (options.ticketIssueError) throw new ApiError(options.ticketIssueError, "blocked", 409, false);
       calls.tickets ??= [];
       calls.tickets.push(command);
-      return { ticket_id: TICKET, expires_at: "2026-08-09T00:10:00.000Z" };
+      return {
+        ticket_id: TICKET,
+        capture_expires_at: "2026-08-09T00:02:00.000Z",
+        submission_expires_at: "2026-08-10T00:00:00.000Z"
+      };
+    },
+    async abandonAssessmentTicket(command) {
+      calls.abandonedTickets ??= [];
+      calls.abandonedTickets.push(command);
+      return { abandoned: true };
     },
     async persistAttempt(command) {
       calls.attempts.push(command);
@@ -535,7 +702,21 @@ function fakeRepository(options = {}) {
       return result;
     },
     async completeSession(command) { calls.completions.push(command); return { session_id: SESSION, replayed: false }; },
+    async completeReview(command) {
+      calls.reviewCompletions.push(command);
+      return { review_schedule_id: command.p_review_schedule_id, replayed: false };
+    },
     async getProgress() { return { enrollment, sessions: [], focus_states: [], reviews: [] }; },
     async getReports() { return []; }
+    ,async exportLearningData(command) {
+      calls.exports ??= [];
+      calls.exports.push(command);
+      return { schema_version: "v2", data: {} };
+    }
+    ,async deleteLearningData(command) {
+      calls.deletions ??= [];
+      calls.deletions.push(command);
+      return { replayed: false, deletion_epoch: command.p_expected_deletion_epoch + 1 };
+    }
   };
 }

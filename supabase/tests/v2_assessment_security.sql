@@ -40,23 +40,23 @@ begin
   select id into second_item_id from public.program_session_items where session_id=v_session_id and position=2;
 
   begin
-    perform public.issue_v2_assessment_ticket(
+    perform public.issue_v2_assessment_ticket_v2(
       '71717171-7171-4717-8717-717171717171',
       (select id from public.program_session_items where session_id=v_session_id and position=6),
-      'initial',repeat('c',64),0,600,60,3,'2026-08-10T01:01:00Z',null
+      'initial',repeat('c',64),0,300,600,60,3,'2026-08-10T01:01:00Z',null
     );
     raise exception 'optional extension was available before required completion';
   exception when check_violation then
     if sqlerrm <> 'OPTIONAL_EXTENSION_NOT_AVAILABLE' then raise; end if;
   end;
 
-  ticket := public.issue_v2_assessment_ticket(
-    '71717171-7171-4717-8717-717171717171',item_id,'initial',repeat('c',64),0,600,60,3,
+  ticket := public.issue_v2_assessment_ticket_v2(
+    '71717171-7171-4717-8717-717171717171',item_id,'initial',repeat('c',64),0,300,600,60,3,
     '2026-08-10T01:01:00Z',null
   );
   begin
-    perform public.issue_v2_assessment_ticket(
-      '71717171-7171-4717-8717-717171717171',item_id,'initial',repeat('d',64),0,600,60,3,
+    perform public.issue_v2_assessment_ticket_v2(
+      '71717171-7171-4717-8717-717171717171',item_id,'initial',repeat('d',64),0,300,600,60,3,
       '2026-08-10T01:01:01Z',null
     );
     raise exception 'multiple unconsumed tickets were accepted';
@@ -64,10 +64,11 @@ begin
     if sqlerrm <> 'UNCONSUMED_TICKET_EXISTS' then raise; end if;
   end;
 
-  attempt := public.persist_v2_attempt_with_ticket(
+  attempt := public.persist_v2_attempt_v2(
     '71717171-7171-4717-8717-717171717171',item_id,
     '73737373-7373-4737-8737-737373737373',repeat('e',64),0,(ticket->>'ticket_id')::uuid,
-    repeat('c',64),'2026-08-10T01:02:00Z','2026-08-10','UTC','azure','en-US',null,
+    repeat('c',64),'2026-08-10T01:01:30Z','2026-08-10T01:02:00Z',
+    '2026-08-10T01:01:30Z','2026-08-10','UTC','azure','en-US',null,
     'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',46,'measured',
     'tongue-forward','{"targetScore":true,"observedCandidate":true}',
     '{"recognitionStatus":"Success"}',null
@@ -79,20 +80,22 @@ begin
   if (select status <> 'consumed' from public.assessment_tickets where id=(ticket->>'ticket_id')::uuid)
   then raise exception 'ticket was not consumed'; end if;
 
-  if (public.persist_v2_attempt_with_ticket(
+  if (public.persist_v2_attempt_v2(
     '71717171-7171-4717-8717-717171717171',item_id,
     '73737373-7373-4737-8737-737373737373',repeat('e',64),0,(ticket->>'ticket_id')::uuid,
-    repeat('c',64),'2026-08-10T01:02:00Z','2026-08-10','UTC','azure','en-US',null,
+    repeat('c',64),'2026-08-10T01:01:30Z','2026-08-10T01:02:00Z',
+    '2026-08-10T01:01:30Z','2026-08-10','UTC','azure','en-US',null,
     'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',46,'measured',
     'tongue-forward','{"targetScore":true,"observedCandidate":true}',
     '{"recognitionStatus":"Success"}',null
   )->>'replayed')::boolean is not true then raise exception 'canonical replay failed'; end if;
 
   begin
-    perform public.persist_v2_attempt_with_ticket(
+    perform public.persist_v2_attempt_v2(
       '71717171-7171-4717-8717-717171717171',item_id,
       '73737373-7373-4737-8737-737373737373',repeat('f',64),0,(ticket->>'ticket_id')::uuid,
-      repeat('c',64),'2026-08-10T01:02:00Z','2026-08-10','UTC','azure','en-US',null,
+      repeat('c',64),'2026-08-10T01:01:30Z','2026-08-10T01:02:00Z',
+      '2026-08-10T01:01:30Z','2026-08-10','UTC','azure','en-US',null,
       'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',47,'measured',
       'tongue-forward','{"targetScore":true,"observedCandidate":true}',
       '{"recognitionStatus":"Success"}',null
@@ -102,15 +105,16 @@ begin
     if sqlerrm <> 'IDEMPOTENCY_PAYLOAD_CONFLICT' then raise; end if;
   end;
 
-  expired_ticket := public.issue_v2_assessment_ticket(
-    '71717171-7171-4717-8717-717171717171',second_item_id,'initial',repeat('d',64),0,30,60,3,
+  expired_ticket := public.issue_v2_assessment_ticket_v2(
+    '71717171-7171-4717-8717-717171717171',second_item_id,'initial',repeat('d',64),0,30,120,60,3,
     '2026-08-10T01:03:00Z',null
   );
   begin
-    perform public.persist_v2_attempt_with_ticket(
+    perform public.persist_v2_attempt_v2(
       '71717171-7171-4717-8717-717171717171',second_item_id,
       '74747474-7474-4747-8747-747474747474',repeat('1',64),0,(expired_ticket->>'ticket_id')::uuid,
-      repeat('d',64),'2026-08-10T01:04:00Z','2026-08-10','UTC','azure','en-US',null,
+      repeat('d',64),'2026-08-10T01:04:00Z','2026-08-10T01:04:00Z',
+      '2026-08-10T01:04:00Z','2026-08-10','UTC','azure','en-US',null,
       'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',46,'measured',null,
       '{"targetScore":true,"observedCandidate":true}','{"recognitionStatus":"Success"}',null
     );
@@ -122,21 +126,22 @@ begin
     or (select status from public.assessment_tickets where id=(expired_ticket->>'ticket_id')::uuid) <> 'issued'
   then raise exception 'expired attempt was partially persisted'; end if;
 
-  invalid_ticket := public.issue_v2_assessment_ticket(
-    '71717171-7171-4717-8717-717171717171',second_item_id,'initial',repeat('e',64),0,600,60,3,
+  invalid_ticket := public.issue_v2_assessment_ticket_v2(
+    '71717171-7171-4717-8717-717171717171',second_item_id,'initial',repeat('e',64),0,300,600,60,3,
     '2026-08-10T01:05:00Z',null
   );
-  perform public.persist_v2_attempt_with_ticket(
+  perform public.persist_v2_attempt_v2(
     '71717171-7171-4717-8717-717171717171',second_item_id,
     '75757575-7575-4757-8757-757575757575',repeat('2',64),0,(invalid_ticket->>'ticket_id')::uuid,
-    repeat('e',64),'2026-08-10T01:05:30Z','2026-08-10','UTC','azure','en-US',null,
+    repeat('e',64),'2026-08-10T01:05:15Z','2026-08-10T01:05:30Z',
+    '2026-08-10T01:05:15Z','2026-08-10','UTC','azure','en-US',null,
     'azure-en-us-focus-v2','rejected',false,false,'provider_recognition_failed',null,null,
     'technical_invalid',null,'{"targetScore":false,"observedCandidate":false}',
     '{"recognitionStatus":"NoMatch"}',null
   );
   begin
-    perform public.issue_v2_assessment_ticket(
-      '71717171-7171-4717-8717-717171717171',second_item_id,'guided_retry',repeat('3',64),0,600,60,3,
+    perform public.issue_v2_assessment_ticket_v2(
+      '71717171-7171-4717-8717-717171717171',second_item_id,'guided_retry',repeat('3',64),0,300,600,60,3,
       '2026-08-10T01:06:00Z',null
     );
     raise exception 'guided retry accepted an invalid source';
@@ -144,15 +149,16 @@ begin
     if sqlerrm <> 'GUIDED_RETRY_NOT_AVAILABLE' then raise; end if;
   end;
 
-  guided_ticket := public.issue_v2_assessment_ticket(
-    '71717171-7171-4717-8717-717171717171',item_id,'guided_retry',repeat('4',64),0,600,60,3,
+  guided_ticket := public.issue_v2_assessment_ticket_v2(
+    '71717171-7171-4717-8717-717171717171',item_id,'guided_retry',repeat('4',64),0,300,600,60,3,
     '2026-08-10T01:07:00Z',null
   );
   begin
-    perform public.persist_v2_attempt_with_ticket(
+    perform public.persist_v2_attempt_v2(
       '71717171-7171-4717-8717-717171717171',second_item_id,
       '76767676-7676-4767-8767-767676767676',repeat('5',64),0,(guided_ticket->>'ticket_id')::uuid,
-      repeat('4',64),'2026-08-10T01:07:30Z','2026-08-10','UTC','azure','en-US',null,
+      repeat('4',64),'2026-08-10T01:07:15Z','2026-08-10T01:07:30Z',
+      '2026-08-10T01:07:15Z','2026-08-10','UTC','azure','en-US',null,
       'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',60,'measured',
       'tongue-forward','{"targetScore":true,"observedCandidate":true}',
       '{"recognitionStatus":"Success"}',null
@@ -161,16 +167,18 @@ begin
   exception when insufficient_privilege then
     if sqlerrm <> 'ASSESSMENT_TICKET_INVALID' then raise; end if;
   end;
-  guided_attempt := public.persist_v2_attempt_with_ticket(
+  guided_attempt := public.persist_v2_attempt_v2(
     '71717171-7171-4717-8717-717171717171',item_id,
     '76767676-7676-4767-8767-767676767676',repeat('5',64),0,(guided_ticket->>'ticket_id')::uuid,
-    repeat('4',64),'2026-08-10T01:07:30Z','2026-08-10','UTC','azure','en-US',null,
+    repeat('4',64),'2026-08-10T01:07:15Z','2026-08-10T01:07:30Z',
+    '2026-08-10T01:07:15Z','2026-08-10','UTC','azure','en-US',null,
     'azure-en-us-focus-v2','server_normalized',false,true,null,'θ',60,'measured',
     'tongue-forward','{"targetScore":true,"observedCandidate":true}',
     '{"recognitionStatus":"Success"}',null
   );
   if (guided_attempt->>'attempt_role') <> 'guided_retry'
     or not exists(select 1 from public.correction_cycles where after_attempt_id=(guided_attempt->>'attempt_id')::uuid
+      and id=(guided_attempt->>'correction_cycle_id')::uuid
       and immediate_change_status='inconclusive')
   then raise exception 'guided correction structure was not derived atomically'; end if;
 
@@ -218,10 +226,15 @@ $$;
 
 do $$
 begin
-  if has_function_privilege('anon','public.issue_v2_assessment_ticket(uuid,uuid,text,text,bigint,integer,integer,integer,timestamptz,text)','EXECUTE')
-    or has_function_privilege('authenticated','public.persist_v2_attempt_with_ticket(uuid,uuid,uuid,text,bigint,uuid,text,timestamptz,date,text,text,text,text,text,text,boolean,boolean,text,text,numeric,text,text,jsonb,jsonb,text)','EXECUTE')
+  if has_function_privilege('service_role','public.issue_v2_assessment_ticket(uuid,uuid,text,text,bigint,integer,integer,integer,timestamptz,text)','EXECUTE')
+    or has_function_privilege('service_role','public.persist_v2_attempt_with_ticket(uuid,uuid,uuid,text,bigint,uuid,text,timestamptz,date,text,text,text,text,text,text,boolean,boolean,text,text,numeric,text,text,jsonb,jsonb,text)','EXECUTE')
     or has_function_privilege('service_role','public.persist_v2_attempt(uuid,uuid,uuid,uuid,text,bigint,text,uuid,timestamptz,date,text,text,text,text,text,boolean,text,text,numeric,text,text,jsonb,jsonb)','EXECUTE')
   then raise exception 'RPC privilege boundary failed'; end if;
+  if not has_function_privilege('service_role','public.issue_v2_assessment_ticket_v2(uuid,uuid,text,text,bigint,integer,integer,integer,integer,timestamptz,text)','EXECUTE')
+    or not has_function_privilege('service_role','public.persist_v2_attempt_v2(uuid,uuid,uuid,text,bigint,uuid,text,timestamptz,timestamptz,timestamptz,date,text,text,text,text,text,text,boolean,boolean,text,text,numeric,text,text,jsonb,jsonb,text)','EXECUTE')
+    or has_function_privilege('authenticated','public.issue_v2_assessment_ticket_v2(uuid,uuid,text,text,bigint,integer,integer,integer,integer,timestamptz,text)','EXECUTE')
+    or has_function_privilege('anon','public.persist_v2_attempt_v2(uuid,uuid,uuid,text,bigint,uuid,text,timestamptz,timestamptz,timestamptz,date,text,text,text,text,text,text,boolean,boolean,text,text,numeric,text,text,jsonb,jsonb,text)','EXECUTE')
+  then raise exception 'S6-08 hardened RPC privilege boundary failed'; end if;
 end;
 $$;
 

@@ -152,6 +152,8 @@ Day 7完了後にレポートを表示する。次の新規判定、すなわち
 
 これらの具体保持期間と法的根拠はTBD。学習削除とアカウント退会を同一操作として曖昧にしない。
 
+S6-08の学習削除は、本人認証後にservice-role専用RPCでuser lockを取得し、同一transactionでdeletion request ledger、epoch一回増加、v1/v2/legacy学習データ削除、削除件数を確定する。auth identity、購読、RevenueCat対応、trial消費履歴、deletion ledger、共有contentは保持する。Hosted実ユーザーへのRPC実行は、定義のmigration適用とは別承認である。
+
 ### 退会・全体削除
 
 退会時のauth user、課金記録、法的保持、匿名化の具体仕様はTBD。RevenueCat/Apple上の購読解約と自社データ削除が別操作であることを説明する。

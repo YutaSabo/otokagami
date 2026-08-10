@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pronunciation Mirror",
+    "name": "Otokagami",
     "slug": "otokagami",
     "scheme": "pronunciationmirror",
     "version": "0.1.1",
@@ -12,7 +12,7 @@
       "bundleIdentifier": "com.yutahemmi.otokagami",
       "supportsTablet": false,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Pronunciation Mirror uses the microphone to assess your pronunciation practice.",
+        "NSMicrophoneUsageDescription": "Otokagamiは、管理された英語課題の発音を判定するためにマイクを使用します。音声は端末からAzureへ直接送信され、自社サーバーには保存されません。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -30,7 +30,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Pronunciation Mirror uses the microphone to assess your pronunciation practice."
+          "microphonePermission": "Otokagamiは、管理された英語課題の発音を判定するためにマイクを使用します。音声は端末からAzureへ直接送信され、自社サーバーには保存されません。"
         }
       ],
       [
