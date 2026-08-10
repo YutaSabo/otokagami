@@ -470,19 +470,20 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、専用Fresh local Supabase、S6-07 staging復元volumeの独立clone、npm workspace
 - **実施日時・最終確認日**：2026-08-10
 - **実施者**：ユーザー承認のもとCodex
-- **実施状況**：local実装、Fresh検証、staging復元clone upgrade rehearsalまで完了。Hosted migration、Azure有料実機fixture、EAS/TestFlight、v2 mode有効化は未実施。
-- **DB変更候補**：forward-only migration `20260810010000_harden_v2_data_lifecycle.sql`（SHA-256 `3310666a60c8cc6587d38c2ad2dda625f731ce7b692ec3c4f48dec17f090d855`）を作成した。capture/submission期限、review snapshot binding、correction cycle整合、user共通lock、service-role専用ticket/attempt/review/session/export/delete RPC、legacy delayed write barrier、`review_completion_receipts`、`learning_deletion_requests`を追加する。top-levelの既存行DML、drop、truncate、rename、backfill、Seed変更は含まない。Hosted適用前の直前承認が必要。
+- **実施状況**：local実装、Fresh検証、staging復元clone upgrade rehearsal、承認済みHosted migration適用と前後照合まで完了。Azure有料実機fixture、EAS/TestFlight、v2 mode有効化は未実施。
+- **DB変更**：forward-only migration `20260810010000_harden_v2_data_lifecycle.sql`（SHA-256 `3310666a60c8cc6587d38c2ad2dda625f731ce7b692ec3c4f48dec17f090d855`）を作成・適用した。capture/submission期限、review snapshot binding、correction cycle整合、user共通lock、service-role専用ticket/attempt/review/session/export/delete RPC、legacy delayed write barrier、`review_completion_receipts`、`learning_deletion_requests`を追加した。top-levelの既存行DML、drop、truncate、rename、backfill、Seed変更は含まない。
 - **Fresh検証**：project ID `otokagami-stage7-fresh-20260810`、専用port `60320`〜`60329`で全migrationとSeedをfresh resetし、content Seed、既存/new RLS・schema・RPC・assessment・lifecycle SQL test、同一attempt並行再送、同一delete request並行再送、DB lintを完走した。初回起動は不要なEdge Runtimeのhealthで停止したため、使い捨て設定だけでEdge Runtimeを無効化して再開した。失敗を成功扱いにせず、最終DB検証は再起動後に実施した。
 - **Upgrade rehearsal**：read-only source volume `supabase_db_oto-s607-hardening-upgrade-20260810`を変更せず、独立volume/container `supabase_db_oto-stage7-upgrade-r2-20260810`（port `60432`）へ複製した。migrationをledger更新と同じtransactionで1件だけ適用し、Auth user 23件と既存public 36 table全件数が前後一致した。public tableは38件、policyは64件から65件、新2 tableは適用直後0件。既存table件数の差分は0件で、全SQL testとattempt/delete並行testも成功した。初回clone `supabase_db_oto-stage7-upgrade-20260810`は最終照合証拠に採用せず、再試行用`r2`と区別して停止保持している。
 - **Mobile／API境界**：SDK 57互換の`expo-sqlite`を導入し、Application SupportのSQLite outbox、SecureStore nonce handle、single-lease worker、ACK消失再送、deletion barrier、代表before/after音声indexを実装した。専用iOS moduleはApplication Support、backup除外、file protection、opaque file keyを設定する。これらのiOS属性、マイク、background、network復帰は実機未確認。音声、URI、token、Authorization、raw Azure JSONはSQLite/API/DB/exportへ保存しない設計と自動検査を追加した。
-- **コード検証**：Core 49 test、API 64 test、Mobile 42 testが成功。Core/API/Mobile/inference lint、Core ESM import、通常Next.js build、Mobile public config build、root lint/buildが成功した。root testはCore/API/Mobile成功後、既知のPython inference unittest停止をboundedに中断したため全体成功とは扱わない。Supabase SQL testは10ファイルをFresh/clone双方で実行し、並行attempt/deleteも双方で成功した。
+- **コード検証**：Core 49 test、API 64 test、Mobile 44 testが成功。Core/API/Mobile/inference lint、Core ESM import、通常Next.js build、Mobile public config build、root lint/buildが成功した。root testはCore/API/Mobile成功後、既知のPython inference unittest停止をboundedに中断したため全体成功とは扱わない。Supabase SQL testは10ファイルをFresh/clone双方で実行し、並行attempt/deleteも双方で成功した。
 - **保持中resource**：Fresh stack container 8件、upgrade DB container 2件、volume-copy container 2件の計12件を停止状態で保持する。専用volumeはFresh DB約81.41MB、Fresh Storage 0B、初回upgrade clone DB約125.3MB、採用した`r2` clone DB約125.2MBの4件。設定・検証ディレクトリとsanitized logは`/private/tmp`配下へ保持し、既存S6-01〜S6-07資源、backup、imageを含め削除していない。
-- **接続・外部境界**：Hosted `otokagami-staging`と旧`Otokagami`、Vercel環境変数、Azure、RevenueCat、EAS、TestFlight、App Store、Productionは変更していない。push前のGit配送による許可済み非Production Preview以外の外部効果は発生させない。v2 modeは`off`のまま。
-- **想定されるリスク**：Hosted migration未適用、実機Azure fixtureに基づくprojection上限/capture/submission/outbox設定未確定、iOS file protection/backup除外と音声lifecycleの実機未確認、正式教材・policy未準備、停止container/volume/imageによるディスク消費、Python inference unittest停止。
+- **Hosted適用と照合**：ユーザーの直前承認後、上記hashのmigration 1件だけをHosted `otokagami-staging`へ単一transactionで適用した。read-onlyの前後照合でAuth user 23件、既存public 36 tableの全exact件数、既存64 policyのdefinition digest `6771c7e158b6d2a4c780a9ae836f597f`が一致した。public tableは38件、policyは65件となり、新2 tableは0件。追加7 column、11 trigger、14 function名、保護RPCへのclient execute grant 0件・service-role grant 7件、migration ledger 1件を確認した。Hosted Seed、reset、backfill、実ユーザーへの削除RPCは実行していない。
+- **接続・外部境界**：変更した外部状態は、承認済みHosted `otokagami-staging` schemaと、branch pushに付随した許可済み非Production Previewだけである。旧`Otokagami`、Vercel code／環境変数、Azure、RevenueCat、EAS、TestFlight、App Storeは変更していない。v2 modeは`off`のまま。
+- **想定されるリスク**：実機Azure fixtureに基づくprojection上限/capture/submission/outbox設定未確定、iOS file protection/backup除外と音声lifecycleの実機未確認、正式教材・policy未準備、停止container/volume/imageによるディスク消費、Python inference unittest停止。
 - **リスクレベル**：中
 - **状態確認方法**：migration SHA-256、Fresh/clone SQL test結果、`docker ps -a`、`docker volume ls`、`docker system df -v`、Core/API/Mobile check、Git diff、実機受入記録を確認する。
 - **停止・削除・復旧手順**：今回の12 containerは停止済み。削除は実施していない。削除時は対象container、4 volume、関連一時ディレクトリ、共有imageを再列挙し、別承認を得る。Hosted適用後のrollbackはv2 modeを`off`に保ち、新objectを未使用のまま残してv1を継続し、即dropしない。
-- **次回確認日**：Hosted migration直前承認またはStage 7実機受入前
+- **次回確認日**：Stage 7実機Azure／Mobile受入前
 
 ## 9. 要確認事項
 
@@ -497,7 +498,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 9. **ESC-014**：S6-04 local／staging clone検証と承認済みHosted適用は完了し、v2 read/writeは未有効。S6-04の停止container 33件・volume 6件・一時ディレクトリ3件の削除は別承認とする。複数stackの同時起動はColima過負荷を避ける。
 10. **ESC-015**：S6-05〜07のlocal／staging clone検証と承認済みHosted migration適用は完了し、v2 modeは`off`のまま。停止container 15件、volume 5件、関連image・一時ディレクトリは保持し、削除は別承認とする。
 11. **ESC-016**：S6-07 hardeningはlocal／staging clone検証と承認済みHosted適用まで完了し、v2 code／learningは未配布・未有効。provider attestation、製品policy、active教材は未実装・未設定。停止container 12件、volume 3件とColima 40GiB disk上限を保持し、削除・縮小は別承認とする。
-12. **ESC-017**：S6-07.1／S6-08／Stage 7はlocal／staging cloneで検証済み。Hosted migration、実機Azure fixture、実機Mobile受入、v2 live設定は未完了。停止container 12件、volume 4件、一時ディレクトリの削除は別承認とする。
+12. **ESC-017**：S6-07.1／S6-08／Stage 7はlocal／staging cloneで検証済みで、承認済みS6-08 Hosted schemaも適用・照合済み。実機Azure fixture、実機Mobile受入、v2 live設定は未完了。停止container 12件、volume 4件、一時ディレクトリの削除は別承認とする。
 
 ### 調査範囲と制限
 
@@ -524,3 +525,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-10 | ESC-016 | Codex | S6-07の一回限りassessment ticket、厳格normalizer、secure RPC、immutable guardをforward-only実装。Fresh reset／Seed／RLS／RPC／並行再送とstaging相当の独立clone upgradeを完了し、Auth 23件、既存35 table全件数、64 policy digest、品質集計の不変、新table 0件、Hosted未変更を確認。Colima diskは資源削除なしで20GiBから40GiBへ拡張し、検証後の12 containerを停止、3 volumeを保持した。 |
 | 2026-08-10 | ESC-016 | Codex | 明示承認後、確定hashのS6-07 migrationだけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存35 table全件数、64 policy digestの不変、新table／v2 runtime row 0件、RLS・client拒否・secure RPC・guard、v1 healthと未認証拒否を確認した。Vercel Productionはv2 route未配布で404のためv2 learning未有効、旧`Otokagami`未操作。 |
 | 2026-08-10 | ESC-017 | Codex | S6-07.1 normalizer/HTTP hardening、S6-08 atomic export/delete、Stage 7 Mobile/SQLite/audio基盤を実装。Fresh/clone双方で全SQL、RLS/RPC、attempt/delete並行収束を検証し、Auth 23件・既存36 table件数不変、新2 table 0件、Hosted未変更を確認した。12 container停止、4 volume保持、v2 mode `off`。 |
+| 2026-08-10 | ESC-017 | Codex | 直前承認後、確定hashのS6-08 migration 1件だけをHosted `otokagami-staging`へ適用。Auth 23件、既存36 table全件数、既存64 policy digestが不変、新2 table 0件、clientの保護RPC grant 0件を確認。実データ削除、v2有効化、Production code/env配信、旧project操作は未実施。 |

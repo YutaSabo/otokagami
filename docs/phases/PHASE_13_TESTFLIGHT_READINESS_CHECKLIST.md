@@ -19,9 +19,9 @@
 | 項目 | 状態 | 根拠 |
 | --- | --- | --- |
 | 新製品方針の文書化 | 確認済み | マスター、仕様01〜10、Phase 13を新方針へ改訂 |
-| コード・DBの新仕様適合 | 一部確認済み | Core/API v2、S6-08 DB、Stage 7 Mobile候補は自動検証済み。Hosted S6-08、実機、教材、課金は未完了 |
+| コード・DBの新仕様適合 | 一部確認済み | Core/API v2、S6-08 DB、Stage 7 Mobile候補は自動検証済み。Hosted S6-08 schemaも適用・照合済みだが、実機、教材、課金は未完了 |
 | Todoist再編 | 未実装 | 本件ではTodoist変更禁止 |
-| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-07まで適用済み・v2 mode `off`。S6-08 migrationは未適用 |
+| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08まで適用・照合済み。v2 modeは`off`で、実データ削除RPCは未実行 |
 | 実機Azure | 未確認 | 有料API・実機操作を行っていない |
 | RevenueCat sandbox | 未確認 | 外部課金操作を行っていない |
 
@@ -38,8 +38,8 @@
 | Azure結果正規化 | 確認済み（fixture） | shared strict projection、対象1音、unknown/invalid、privacy負テスト。実機fixture待ち |
 | API再試行状態 | 確認済み（自動） | ticket nonce、client attempt id、SQLite outbox、並行再送 |
 | RevenueCat SDK/webhookコード | 旧実装のみ確認済み | sandbox商品、購入、復元、再送 |
-| Supabase RLS・テスト | 確認済み（local/clone） | protected RPC、owner分離、並行attempt/delete。Hosted S6-08待ち |
-| export/delete | 確認済み（local/clone） | atomic delete、epoch、redacted snapshot、端末barrier。Hosted定義適用待ち |
+| Supabase RLS・テスト | 確認済み（local/clone/Hosted schema） | protected RPC、owner分離、並行attempt/delete。Hostedはobject・grant・既存件数を照合済み |
+| export/delete | 確認済み（local/clone/Hosted schema） | atomic delete、epoch、redacted snapshot、端末barrier。Hosted定義は適用済みだが、実ユーザーへの削除RPCは未実行 |
 
 ## 4. 新MVP中心体験
 
@@ -124,7 +124,7 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 | 実価格 | TBD |
 | sandbox購入・復元 | 未確認 |
 | webhookの新MVP統合 | 旧実装のみ確認済み |
-| Hosted Supabase schema/seed | S6-07まで確認済み。S6-08未適用 |
+| Hosted Supabase schema/seed | S6-08 schemaまで適用・照合済み。Hosted Seedは実行していない |
 | Vercel/Fly.io/Expo現在状態 | Vercel Productionはv2未配布。最新状態の再確認は次回外部操作前 |
 | App Store Connect/TestFlight現在状態 | Build 8/9接続先確認済み。新Mobile build未作成 |
 
@@ -132,7 +132,7 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 
 ## 10. 新MVP完了ブロッカー
 
-1. S6-08 Hosted migrationの直前承認・適用とStage 7実機受入。
+1. Stage 7実機受入と、実機Azure fixtureに基づくlive設定の確定。
 2. 約104課題と全資産のレビュー。
 3. 実機Azure品質・速度確認。
 4. 実機Azure fixtureに基づくpayload/期限設定とv2 live設定。
@@ -142,4 +142,4 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 
 ## 11. 技術的完成状態
 
-S6-07.1／S6-08とStage 7 Mobileは、fixture・local DB・staging復元cloneに基づくcode-complete candidateである。Hosted S6-08、実機Azure/Mobile、iOS file protection/backup除外、microphone/background/network復帰、教材、Stage 8課金、PR review/merge、Production、App Store作業は未完了である。
+S6-07.1／S6-08とStage 7 Mobileは、fixture・local DB・staging復元cloneに基づくcode-complete candidateであり、S6-08 Hosted schemaは適用・照合済みである。実機Azure/Mobile、iOS file protection/backup除外、microphone/background/network復帰、教材、Stage 8課金、PR review/merge、Production code/env deployment、App Store作業は未完了である。
