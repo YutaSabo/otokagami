@@ -12,8 +12,11 @@ import {
   evaluateShortening,
   optionalExtensionsAvailable,
   normalizeAzureFocusResult,
+  normalizeAzureFocusProjection,
+  projectAzureFocusPayload,
+  measureJsonBytes,
   AZURE_V2_CAPACITY_REFERENCE,
-  AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES,
+  AZURE_V2_TEST_PAYLOAD_MAX_BYTES,
   resumeProgramDayPlan,
   resolveProgramDayPlan,
   reviewStatusForDate,
@@ -60,8 +63,8 @@ test("Calendar Date uses explicit IANA timezone across DST and day boundaries", 
 
 test("v2 Azure normalizer emits only allowlisted focus fields with a fixture-derived byte limit", () => {
   const checkedFixtureEnvelope = new TextEncoder().encode(JSON.stringify(AZURE_V2_CAPACITY_REFERENCE)).byteLength * 4;
-  assert.ok(AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES >= checkedFixtureEnvelope);
-  assert.equal(Math.log2(AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES) % 1, 0);
+  assert.ok(AZURE_V2_TEST_PAYLOAD_MAX_BYTES >= checkedFixtureEnvelope);
+  assert.equal(Math.log2(AZURE_V2_TEST_PAYLOAD_MAX_BYTES) % 1, 0);
   const result = normalizeAzureFocusResult({
     providerPayload: AZURE_V2_CAPACITY_REFERENCE,
     referenceText: "think now",
@@ -71,7 +74,8 @@ test("v2 Azure normalizer emits only allowlisted focus fields with a fixture-der
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
     nextActionKey: "tongue_forward",
-    assessmentLocale: "en-US"
+    assessmentLocale: "en-US",
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
   });
   assert.equal(result.observedCandidate, "s");
   assert.equal(result.targetScore, 46);
@@ -88,7 +92,8 @@ test("v2 Azure normalizer rejects audio, URI, token, raw secret and oversized pr
     targetLocator: { wordIndex: 0, phonemeIndex: 0 },
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
-    assessmentLocale: "en-US" as const
+    assessmentLocale: "en-US" as const,
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
   };
   for (const providerPayload of [
     { audio: "bytes" },
@@ -100,7 +105,7 @@ test("v2 Azure normalizer rejects audio, URI, token, raw secret and oversized pr
   }
   assert.throws(
     () => normalizeAzureFocusResult({ ...base, providerPayload: AZURE_V2_CAPACITY_REFERENCE, payloadByteLimit: 1 }),
-    /measured fixture limit/
+    /injected payload limit/
   );
 });
 
@@ -112,7 +117,8 @@ test("v2 Azure normalizer fails closed for empty, missing status, missing target
     targetLocator: { wordIndex: 0, phonemeIndex: 0 },
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
-    assessmentLocale: "en-US" as const
+    assessmentLocale: "en-US" as const,
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
   };
   assert.throws(() => normalizeAzureFocusResult({ ...base, providerPayload: {} }), /RecognitionStatus/);
   assert.throws(
@@ -188,7 +194,8 @@ test("v2 Azure normalizer accepts a representative complete result and rejects n
     targetLocator: { wordIndex: 0, phonemeIndex: 0 },
     expectedFocusRepresentation: "θ",
     referenceTextVersion: "fixture-v1",
-    assessmentLocale: "en-US"
+    assessmentLocale: "en-US",
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
   });
   assert.equal(result.technicalValid, true);
 
@@ -208,9 +215,90 @@ test("v2 Azure normalizer accepts a representative complete result and rejects n
       targetLocator: { wordIndex: 0, phonemeIndex: 0 },
       expectedFocusRepresentation: "θ",
       referenceTextVersion: "fixture-v1",
-      assessmentLocale: "en-US"
+      assessmentLocale: "en-US",
+      payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
     }), /Forbidden provider field/);
   }
+});
+
+test("v2 Azure projection maps only known statuses and discards an unknown raw status", () => {
+  const expected = new Map([
+    ["NoMatch", "no_match"],
+    ["InitialSilenceTimeout", "initial_silence_timeout"],
+    ["BabbleTimeout", "babble_timeout"],
+    ["Error", "error"],
+    ["FutureProviderStatus secret:value", "unknown"]
+  ]);
+  for (const [raw, status] of expected) {
+    const { projection } = projectAzureFocusPayload({
+      providerPayload: { RecognitionStatus: raw },
+      targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+      payloadByteLimit: 1_024
+    });
+    assert.equal(projection.recognitionStatus, status);
+    assert.equal(projection.displayText, null);
+    assert.equal(projection.target, null);
+    assert.doesNotMatch(JSON.stringify(projection), /FutureProviderStatus|secret:value/);
+  }
+});
+
+test("v2 Azure strict projection is browser-safe, measurable and normalizes identically", () => {
+  const projected = projectAzureFocusPayload({
+    providerPayload: AZURE_V2_CAPACITY_REFERENCE,
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
+  });
+  assert.equal(projected.metrics.providerPayloadBytes, measureJsonBytes(AZURE_V2_CAPACITY_REFERENCE));
+  assert.equal(projected.metrics.projectionBytes, measureJsonBytes(projected.projection));
+  assert.ok(projected.metrics.projectionBytes < projected.metrics.providerPayloadBytes);
+  const normalized = normalizeAzureFocusProjection({
+    providerProjection: projected.projection,
+    referenceText: "think now",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think-now",
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    assessmentLocale: "en-US"
+  });
+  const wrapped = normalizeAzureFocusResult({
+    providerPayload: AZURE_V2_CAPACITY_REFERENCE,
+    referenceText: "think now",
+    contentVersionId: CONTENT_VERSION,
+    practiceItemKey: "think-now",
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    expectedFocusRepresentation: "θ",
+    referenceTextVersion: "fixture-v1",
+    assessmentLocale: "en-US",
+    payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
+  });
+  assert.deepEqual(normalized, wrapped);
+});
+
+test("v2 Azure projection rejects control, secret, URI, overlong and structurally complex values", () => {
+  const mutateCandidate = (value: string) => {
+    const payload = structuredClone(AZURE_V2_CAPACITY_REFERENCE);
+    payload.NBest[0].Words[0].Phonemes[0].PronunciationAssessment.NBestPhonemes[0].Phoneme = value;
+    return payload;
+  };
+  for (const value of ["s\u0000", "https://invalid.example", "token:value", "s".repeat(65)]) {
+    assert.throws(() => projectAzureFocusPayload({
+      providerPayload: mutateCandidate(value),
+      targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+      payloadByteLimit: AZURE_V2_TEST_PAYLOAD_MAX_BYTES
+    }));
+  }
+  assert.throws(() => projectAzureFocusPayload({
+    providerPayload: { RecognitionStatus: "NoMatch", NBest: [{ NBest: [{ NBest: [] }] }] },
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    payloadByteLimit: 1_024,
+    maxDepth: 2
+  }), /depth limit/);
+  assert.throws(() => projectAzureFocusPayload({
+    providerPayload: { RecognitionStatus: "NoMatch", NBest: Array.from({ length: 3 }, () => ({})) },
+    targetLocator: { wordIndex: 0, phonemeIndex: 0 },
+    payloadByteLimit: 1_024,
+    maxArrayLength: 2
+  }), /array length limit/);
 });
 
 test("review schedules use 1, 3, 7, 14 date-only days and avoid duplicate basis", () => {

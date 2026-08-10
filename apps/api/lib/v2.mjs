@@ -1,23 +1,23 @@
 import {
-  AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES,
   assertIanaTimeZone,
   assertUuid,
   calendarDateFromInstant,
   canonicalPayloadSha256,
   createDailyPlan,
-  normalizeAzureFocusResult,
+  measureJsonBytes,
+  normalizeAzureFocusProjection,
   resumeProgramDayPlan
 } from "@pronunciation-mirror/core/v2";
 import { randomUUID } from "node:crypto";
 
 import { getApiEnv } from "./env.mjs";
-import { ApiError, getBearerToken, ok, readJson, readJsonLimited } from "./http.mjs";
+import { ApiError, getBearerToken, ok, readJsonLimited } from "./http.mjs";
 
 const V2_MODES = new Set(["off", "read_only", "learning"]);
 const READ_ROUTES = new Set(["bootstrap", "access-status", "progress", "reports"]);
-const V2_API_CONTRACT_VERSION = "2026-08-s6-07";
-const ATTEMPT_REQUEST_ENVELOPE_BYTES = 2_048;
-export const V2_ATTEMPT_REQUEST_MAX_BYTES = AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES + ATTEMPT_REQUEST_ENVELOPE_BYTES;
+const V2_API_CONTRACT_VERSION = "2026-08-s6-08-stage-7";
+const CONTROL_REQUEST_MAX_BYTES = 4_096;
+const ATTEMPT_REQUEST_ENVELOPE_BYTES = 4_096;
 
 export function getV2Mode(env = process.env) {
   const value = env.OTOKAGAMI_V2_MODE ?? "off";
@@ -122,13 +122,19 @@ export function createV2Repository(config, fetchImpl = fetch) {
       return request("/rpc/refresh_v2_review_slot_secure", { method: "POST", body: JSON.stringify(command) });
     },
     async persistAttempt(command) {
-      return request("/rpc/persist_v2_attempt_with_ticket", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/persist_v2_attempt_v2", { method: "POST", body: JSON.stringify(command) });
     },
     async issueAssessmentTicket(command) {
-      return request("/rpc/issue_v2_assessment_ticket", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/issue_v2_assessment_ticket_v2", { method: "POST", body: JSON.stringify(command) });
+    },
+    async abandonAssessmentTicket(command) {
+      return request("/rpc/abandon_v2_assessment_ticket", { method: "POST", body: JSON.stringify(command) });
     },
     async completeSession(command) {
       return request("/rpc/complete_v2_program_day_secure", { method: "POST", body: JSON.stringify(command) });
+    },
+    async completeReview(command) {
+      return request("/rpc/complete_v2_review_submission", { method: "POST", body: JSON.stringify(command) });
     },
     async getProgress(userId) {
       const [enrollment, sessions, focusStates, reviews] = await Promise.all([
@@ -141,6 +147,12 @@ export function createV2Repository(config, fetchImpl = fetch) {
     },
     async getReports(userId) {
       return request(`/learning_reports?user_id=eq.${encode(userId)}&select=*&order=created_at.desc`);
+    },
+    async exportLearningData(command) {
+      return request("/rpc/export_v2_learning_data_snapshot", { method: "POST", body: JSON.stringify(command) });
+    },
+    async deleteLearningData(command) {
+      return request("/rpc/delete_v2_learning_data_atomic", { method: "POST", body: JSON.stringify(command) });
     }
   };
 }
@@ -184,12 +196,20 @@ export async function v2Bootstrap(options) {
   const deletionEpoch = await context.repository.getDeletionEpoch(context.user.id);
   const contentVersion = await context.repository.getActiveContentVersion();
   return {
+    userId: context.user.id,
     mode: context.mode,
     minimumSupportedVersion: null,
     contractVersion: V2_API_CONTRACT_VERSION,
     normalizerVersion: "azure-en-us-focus-v2",
     contentVersion: contentVersion?.id ?? null,
-    capabilities: { providerAttestation: false, appAttest: false, durableEvidence: false, shortening: false },
+    capabilities: {
+      providerAttestation: false,
+      appAttest: false,
+      durableEvidence: false,
+      shortening: false,
+      liveLearningConfigured: hasLiveLearningConfiguration(context.config)
+    },
+    outboxPolicy: publicOutboxPolicy(context.config),
     deletionEpoch,
     access: await getV2Access(context.repository, context.user.id, context.config),
     enrollment: await context.repository.getEnrollment(context.user.id)
@@ -216,7 +236,7 @@ export async function v2DailySession({
     const effectiveDate = existing.review_effective_calendar_date ?? existing.originating_calendar_date;
     if (calendarDate !== effectiveDate) {
       if (context.mode !== "learning") {
-        return { session: sanitizeSession(existing), resumed: true, refresh_pending: true };
+        return { contract_version: V2_API_CONTRACT_VERSION, session: sanitizeSession(existing), resumed: true, refresh_pending: true };
       }
       const contentVersion = await context.repository.getActiveContentVersion();
       if (contentVersion?.id === existing.content_version_id) {
@@ -256,6 +276,7 @@ export async function v2DailySession({
             reviewScheduleId: selected?.id ?? null,
             reviewSourceEvidenceId: selected?.basedOnEvidenceId ?? null,
             reviewDueDate: selected?.dueDate ?? null,
+            reviewIntervalKind: selected?.intervalKind ?? null,
             referenceText: source.referenceText,
             referenceTextVersion: source.referenceTextVersion,
             expectedFocusRepresentation: source.expectedFocusRepresentation,
@@ -265,15 +286,15 @@ export async function v2DailySession({
           } : null
         });
         const refreshed = await context.repository.getActiveSession(context.user.id);
-        if (refreshed) return { session: sanitizeSession(refreshed), resumed: true };
+        if (refreshed) return { contract_version: V2_API_CONTRACT_VERSION, session: sanitizeSession(refreshed), resumed: true };
       }
     }
-    return { session: sanitizeSession(existing), resumed: true };
+    return { contract_version: V2_API_CONTRACT_VERSION, session: sanitizeSession(existing), resumed: true };
   }
   assertV2Mode(context.mode, "write");
   const access = await getV2Access(context.repository, context.user.id, context.config, now);
   if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED", "学習を続けるには購読が必要です。", 402, false);
-  const body = await readJson(request);
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
   assertAllowedKeys(body, ["timezone"]);
   const timezone = typeof body?.timezone === "string" ? body.timezone : "";
   try { assertIanaTimeZone(timezone); } catch { throw new ApiError("INVALID_TIMEZONE", "タイムゾーンが不正です。", 400, false); }
@@ -307,6 +328,9 @@ export async function v2DailySession({
   const allItems = [...planResult.plan.requiredItems, ...planResult.plan.optionalItems];
   const planned = allItems.map((item) => {
     const source = content.find((candidate) => candidate.practiceItemKey === item.practiceItemKey);
+    const review = item.reviewScheduleId === planResult.plan.selectedReview?.id
+      ? planResult.plan.selectedReview
+      : undefined;
     if (!source?.referenceText || !source.referenceTextVersion || !source.expectedFocusRepresentation || !source.targetLocator) {
       throw new ApiError("CONTENT_NOT_READY", "学習コンテンツは準備中です。", 503, false);
     }
@@ -318,10 +342,10 @@ export async function v2DailySession({
       focusGroupKey: item.focusGroupKey,
       selectionReason: item.selectionReason,
       required: item.required,
-      reviewDueDate: planResult.plan.selectedReview !== undefined &&
-        planResult.plan.selectedReview.id === item.reviewScheduleId
-        ? planResult.plan.selectedReview.dueDate
-        : null,
+      reviewScheduleId: review?.id ?? null,
+      reviewSourceEvidenceId: review?.basedOnEvidenceId ?? null,
+      reviewDueDate: review?.dueDate ?? null,
+      reviewIntervalKind: review?.intervalKind ?? null,
       referenceText: source.referenceText,
       referenceTextVersion: source.referenceTextVersion,
       expectedFocusRepresentation: source.expectedFocusRepresentation,
@@ -344,7 +368,7 @@ export async function v2DailySession({
   });
   const created = await context.repository.getActiveSession(context.user.id);
   if (!created) throw new ApiError("SESSION_CREATE_FAILED", "学習の開始に失敗しました。", 502, true);
-  return { session: sanitizeSession(created), resumed: Boolean(result?.replayed) };
+  return { contract_version: V2_API_CONTRACT_VERSION, session: sanitizeSession(created), resumed: Boolean(result?.replayed) };
 }
 
 export async function v2SpeechToken({ request, env = process.env, fetchImpl = fetch, repository, now = new Date() }) {
@@ -352,7 +376,7 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
   assertV2Mode(context.mode, "write");
   const access = await getV2Access(context.repository, context.user.id, context.config, now);
   if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED", "学習を続けるには購読が必要です。", 402, false);
-  const body = await readJson(request);
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
   assertAllowedKeys(body, ["session_item_id", "attempt_purpose"]);
   assertUuidOrBadRequest(body?.session_item_id, "session_item_id");
   const purpose = body.attempt_purpose ?? "initial";
@@ -361,16 +385,38 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
   if (!item || !["planned", "in_progress"].includes(item.session.status) || !item.reference_text || !item.target_locator) {
     throw new ApiError("SESSION_ITEM_NOT_AVAILABLE", "この課題は利用できません。", 404, false);
   }
-  if (!context.config.v2AssessmentTicketTtlSeconds || !context.config.v2TicketRateLimitWindowSeconds || !context.config.v2TicketRateLimitMax) {
+  if (!context.config.v2CaptureWindowSeconds || !context.config.v2SubmissionWindowSeconds ||
+      !context.config.v2SpeechTokenTtlSeconds || !context.config.v2TicketRateLimitWindowSeconds ||
+      !context.config.v2TicketRateLimitMax || !context.config.v2ProviderProjectionMaxBytes ||
+      !publicOutboxPolicy(context.config)) {
     throw new ApiError("SERVER_ENV_MISSING", "v2 assessment ticket設定が未設定です。", 500, false);
   }
   if (!context.config.azureSpeechKey || !context.config.azureSpeechRegion) {
     throw new ApiError("AZURE_SPEECH_CONFIG_MISSING", "Azure Speech設定が未設定です。", 500, false);
   }
+  const nonce = randomUUID();
+  const deletionEpoch = await context.repository.getDeletionEpoch(context.user.id);
+  if (!Number.isSafeInteger(deletionEpoch) || deletionEpoch < 0) {
+    throw new ApiError("DELETION_EPOCH_REQUIRED", "学習データ境界を確認できません。", 409, false);
+  }
+  const ticket = await context.repository.issueAssessmentTicket({
+    p_user_id: context.user.id,
+    p_session_item_id: item.id,
+    p_attempt_purpose: purpose,
+    p_nonce_sha256: canonicalPayloadSha256(nonce),
+    p_deletion_epoch: deletionEpoch,
+    p_capture_ttl_seconds: context.config.v2CaptureWindowSeconds,
+    p_submission_window_seconds: context.config.v2SubmissionWindowSeconds,
+    p_rate_window_seconds: context.config.v2TicketRateLimitWindowSeconds,
+    p_rate_limit_max: context.config.v2TicketRateLimitMax,
+    p_issued_at: now.toISOString(),
+    p_entitlement_id: context.config.v2RevenueCatEntitlementId
+  });
   let token;
-  if (context.config.azureAssessmentMode === "mock") {
-    token = "mock-speech-token";
-  } else {
+  try {
+    if (context.config.azureAssessmentMode === "mock") {
+      token = "mock-speech-token";
+    } else {
     let response;
     try {
       response = await fetchImpl(`https://${context.config.azureSpeechRegion}.api.cognitive.microsoft.com/sts/v1.0/issueToken`, {
@@ -385,36 +431,36 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
     } catch {
       throw new ApiError("AZURE_TOKEN_UNAVAILABLE", "発音判定の準備に失敗しました。", 502, true);
     }
-    if (!response.ok) throw new ApiError("AZURE_TOKEN_UNAVAILABLE", "発音判定の準備に失敗しました。", 502, true);
+      if (!response.ok) throw new ApiError("AZURE_TOKEN_UNAVAILABLE", "発音判定の準備に失敗しました。", 502, true);
     token = (await response.text()).trim();
     if (!token) throw new ApiError("AZURE_TOKEN_UNAVAILABLE", "発音判定の準備に失敗しました。", 502, true);
+    }
+  } catch (error) {
+    await context.repository.abandonAssessmentTicket({
+      p_user_id: context.user.id,
+      p_ticket_id: ticket.ticket_id,
+      p_nonce_sha256: canonicalPayloadSha256(nonce),
+      p_server_now: now.toISOString()
+    }).catch(() => undefined);
+    throw error;
   }
-  const nonce = randomUUID();
-  const deletionEpoch = await context.repository.getDeletionEpoch(context.user.id);
-  if (!Number.isSafeInteger(deletionEpoch) || deletionEpoch < 0) {
-    throw new ApiError("DELETION_EPOCH_REQUIRED", "学習データ境界を確認できません。", 409, false);
-  }
-  const ticket = await context.repository.issueAssessmentTicket({
-    p_user_id: context.user.id,
-    p_session_item_id: item.id,
-    p_attempt_purpose: purpose,
-    p_nonce_sha256: canonicalPayloadSha256(nonce),
-    p_deletion_epoch: deletionEpoch,
-    p_ttl_seconds: context.config.v2AssessmentTicketTtlSeconds,
-    p_rate_window_seconds: context.config.v2TicketRateLimitWindowSeconds,
-    p_rate_limit_max: context.config.v2TicketRateLimitMax,
-    p_issued_at: now.toISOString(),
-    p_entitlement_id: context.config.v2RevenueCatEntitlementId
-  });
   return {
     token,
     region: context.config.azureSpeechRegion,
     locale: "en-US",
+    contract_version: V2_API_CONTRACT_VERSION,
+    provider_projection_max_bytes: context.config.v2ProviderProjectionMaxBytes,
     reference_text: item.reference_text,
     session_item_id: item.id,
     issued_at: now.toISOString(),
-    expires_at: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
-    assessment_ticket: { id: ticket.ticket_id, nonce, expires_at: ticket.expires_at, deletion_epoch: deletionEpoch }
+    token_expires_at: new Date(now.getTime() + context.config.v2SpeechTokenTtlSeconds * 1_000).toISOString(),
+    assessment_ticket: {
+      id: ticket.ticket_id,
+      nonce,
+      capture_expires_at: ticket.capture_expires_at,
+      submission_expires_at: ticket.submission_expires_at,
+      deletion_epoch: deletionEpoch
+    }
   };
 }
 
@@ -423,8 +469,11 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
   assertV2Mode(context.mode, "write");
   const access = await getV2Access(context.repository, context.user.id, context.config, now);
   if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED", "学習を続けるには購読が必要です。", 402, false);
-  const body = await readJsonLimited(request, V2_ATTEMPT_REQUEST_MAX_BYTES);
-  assertAllowedKeys(body, ["session_item_id", "client_attempt_id", "assessment_ticket_id", "assessment_ticket_nonce", "deletion_epoch", "provider_result"]);
+  if (!context.config.v2ProviderProjectionMaxBytes) {
+    throw new ApiError("SERVER_ENV_MISSING", "v2判定payload上限が未設定です。", 500, false);
+  }
+  const body = await readJsonLimited(request, context.config.v2ProviderProjectionMaxBytes + ATTEMPT_REQUEST_ENVELOPE_BYTES);
+  assertAllowedKeys(body, ["session_item_id", "client_attempt_id", "assessment_ticket_id", "assessment_ticket_nonce", "deletion_epoch", "captured_at", "provider_projection"]);
   assertUuidOrBadRequest(body?.session_item_id, "session_item_id");
   assertUuidOrBadRequest(body?.client_attempt_id, "client_attempt_id");
   if (body?.assessment_ticket_id == null || body?.assessment_ticket_nonce == null) {
@@ -433,6 +482,9 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
   assertUuidOrBadRequest(body.assessment_ticket_id, "assessment_ticket_id");
   assertUuidOrBadRequest(body.assessment_ticket_nonce, "assessment_ticket_nonce");
   if (!Number.isSafeInteger(body?.deletion_epoch) || body.deletion_epoch < 0) throw new ApiError("BAD_REQUEST", "deletion_epochが不正です。", 400, false);
+  if (typeof body?.captured_at !== "string" || !Number.isFinite(Date.parse(body.captured_at))) {
+    throw new ApiError("BAD_REQUEST", "captured_atが不正です。", 400, false);
+  }
   const currentEpoch = await context.repository.getDeletionEpoch(context.user.id);
   if (!Number.isSafeInteger(currentEpoch) || currentEpoch !== body.deletion_epoch) {
     throw new ApiError("DELETION_EPOCH_CONFLICT", "学習データ境界が更新されています。", 409, false);
@@ -441,8 +493,11 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
   if (!item) throw new ApiError("SESSION_ITEM_NOT_AVAILABLE", "この課題は利用できません。", 404, false);
   let normalized;
   try {
-    normalized = normalizeAzureFocusResult({
-      providerPayload: body.provider_result,
+    if (measureJsonBytes(body.provider_projection) > context.config.v2ProviderProjectionMaxBytes) {
+      throw new RangeError("providerProjection exceeds the configured payload limit.");
+    }
+    normalized = normalizeAzureFocusProjection({
+      providerProjection: body.provider_projection,
       referenceText: item.reference_text,
       contentVersionId: item.content_version_id,
       practiceItemKey: item.practice_item_key,
@@ -450,11 +505,10 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
       expectedFocusRepresentation: item.expected_focus_representation,
       referenceTextVersion: item.reference_text_version,
       nextActionKey: item.next_action_key ?? undefined,
-      assessmentLocale: "en-US",
-      payloadByteLimit: AZURE_V2_PROVIDER_PAYLOAD_MAX_BYTES
+      assessmentLocale: "en-US"
     });
   } catch (error) {
-    if (error instanceof RangeError && /exceeds the measured fixture limit/.test(error.message)) {
+    if (error instanceof RangeError && /exceeds the configured payload limit/.test(error.message)) {
       throw new ApiError("PROVIDER_PAYLOAD_TOO_LARGE", "判定結果が大きすぎます。", 413, false);
     }
     if (error instanceof TypeError || error instanceof RangeError) {
@@ -478,6 +532,8 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
     p_deletion_epoch: body.deletion_epoch,
     p_assessment_ticket_id: body.assessment_ticket_id,
     p_ticket_nonce_sha256: canonicalPayloadSha256(body.assessment_ticket_nonce),
+    p_captured_at: body.captured_at,
+    p_server_now: now.toISOString(),
     p_attempted_at: attemptedAt,
     p_calendar_date: calendarDateFromInstant(attemptedAt, item.session.timezone),
     p_timezone: item.session.timezone,
@@ -503,7 +559,7 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
 export async function v2CompleteSession({ request, env = process.env, fetchImpl = fetch, repository, now = new Date() }) {
   const context = await createV2Context({ request, env, fetchImpl, repository });
   assertV2Mode(context.mode, "write");
-  const body = await readJson(request);
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
   assertAllowedKeys(body, ["session_id", "completion_idempotency_key"]);
   assertUuidOrBadRequest(body?.session_id, "session_id");
   assertUuidOrBadRequest(body?.completion_idempotency_key, "completion_idempotency_key");
@@ -523,6 +579,41 @@ export async function v2CompleteSession({ request, env = process.env, fetchImpl 
   });
 }
 
+export async function v2CompleteReview({ request, env = process.env, fetchImpl = fetch, repository, now = new Date() }) {
+  const context = await createV2Context({ request, env, fetchImpl, repository });
+  assertV2Mode(context.mode, "write");
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
+  assertAllowedKeys(body, [
+    "review_schedule_id",
+    "session_item_id",
+    "attempt_id",
+    "deletion_epoch",
+    "completion_idempotency_key"
+  ]);
+  assertUuidOrBadRequest(body?.review_schedule_id, "review_schedule_id");
+  assertUuidOrBadRequest(body?.session_item_id, "session_item_id");
+  assertUuidOrBadRequest(body?.attempt_id, "attempt_id");
+  assertUuidOrBadRequest(body?.completion_idempotency_key, "completion_idempotency_key");
+  if (!Number.isSafeInteger(body?.deletion_epoch) || body.deletion_epoch < 0) {
+    throw new ApiError("BAD_REQUEST", "deletion_epochが不正です。", 400, false);
+  }
+  const item = await context.repository.getSessionItem(context.user.id, body.session_item_id);
+  if (!item || item.review_schedule_id !== body.review_schedule_id || item.prompt_role !== "review") {
+    throw new ApiError("REVIEW_NOT_AVAILABLE", "復習課題を確認できません。", 404, false);
+  }
+  const completedAt = now.toISOString();
+  return context.repository.completeReview({
+    p_user_id: context.user.id,
+    p_review_schedule_id: body.review_schedule_id,
+    p_session_item_id: body.session_item_id,
+    p_attempt_id: body.attempt_id,
+    p_deletion_epoch: body.deletion_epoch,
+    p_completion_idempotency_key: body.completion_idempotency_key,
+    p_completed_at: completedAt,
+    p_calendar_date: calendarDateFromInstant(completedAt, item.session.timezone)
+  });
+}
+
 export async function v2Progress(options) {
   const context = await createV2Context(options);
   return context.repository.getProgress(context.user.id);
@@ -532,6 +623,38 @@ export async function v2Reports(options) {
   const context = await createV2Context(options);
   const enrollment = await context.repository.getEnrollment(context.user.id);
   return { day_7_report_status: enrollment?.day_7_report_status ?? "not_started", reports: await context.repository.getReports(context.user.id) };
+}
+
+export async function v2ExportLearningData({ request, env = process.env, fetchImpl = fetch, repository, now = new Date() }) {
+  const context = await createV2Context({ request, env, fetchImpl, repository });
+  if (!context.config.v2ExportMaxBytes) {
+    throw new ApiError("SERVER_ENV_MISSING", "学習データ書き出し上限が未設定です。", 500, false);
+  }
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
+  assertAllowedKeys(body, []);
+  return context.repository.exportLearningData({
+    p_user_id: context.user.id,
+    p_max_bytes: context.config.v2ExportMaxBytes,
+    p_server_now: now.toISOString()
+  });
+}
+
+export async function v2DeleteLearningData({ request, env = process.env, fetchImpl = fetch, repository, now = new Date() }) {
+  const context = await createV2Context({ request, env, fetchImpl, repository });
+  assertV2Mode(context.mode, "write");
+  const body = await readJsonLimited(request, CONTROL_REQUEST_MAX_BYTES);
+  assertAllowedKeys(body, ["confirm", "deletion_request_id", "expected_deletion_epoch"]);
+  if (body?.confirm !== true) throw new ApiError("DELETE_CONFIRMATION_REQUIRED", "削除の確認が必要です。", 400, false);
+  assertUuidOrBadRequest(body?.deletion_request_id, "deletion_request_id");
+  if (!Number.isSafeInteger(body?.expected_deletion_epoch) || body.expected_deletion_epoch < 0) {
+    throw new ApiError("BAD_REQUEST", "expected_deletion_epochが不正です。", 400, false);
+  }
+  return context.repository.deleteLearningData({
+    p_user_id: context.user.id,
+    p_deletion_request_id: body.deletion_request_id,
+    p_expected_deletion_epoch: body.expected_deletion_epoch,
+    p_server_now: now.toISOString()
+  });
 }
 
 export async function handleV2(kind, options) {
@@ -544,8 +667,11 @@ export async function handleV2(kind, options) {
     case "speech-token": data = await v2SpeechToken(options); break;
     case "attempts": data = await v2PersistAttempt(options); break;
     case "session-completion": data = await v2CompleteSession(options); break;
+    case "review-completion": data = await v2CompleteReview(options); break;
     case "progress": data = await v2Progress(options); break;
     case "reports": data = await v2Reports(options); break;
+    case "export": data = await v2ExportLearningData(options); break;
+    case "delete-learning-data": data = await v2DeleteLearningData(options); break;
     default: throw new ApiError("NOT_FOUND", "APIが見つかりません。", 404, false);
   }
   return ok(data, { headers: { "Cache-Control": "no-store, private", Pragma: "no-cache" } });
@@ -554,6 +680,7 @@ export async function handleV2(kind, options) {
 function sanitizeSession(session) {
   return {
     id: session.id,
+    content_version_id: session.content_version_id,
     learning_day_sequence: session.learning_day_sequence,
     trial_program_day: session.trial_program_day,
     originating_calendar_date: session.originating_calendar_date,
@@ -571,9 +698,14 @@ function sanitizeSession(session) {
       required: item.is_required,
       status: item.status,
       reference_text: item.reference_text,
+      reference_text_version: item.reference_text_version,
       expected_focus_representation: item.expected_focus_representation,
       target_locator: item.target_locator,
-      next_action_key: item.next_action_key
+      next_action_key: item.next_action_key,
+      review_schedule_id: item.review_schedule_id,
+      review_source_evidence_id: item.review_source_evidence_id,
+      review_due_date: item.review_due_date,
+      review_interval_kind: item.review_interval_kind
     }))
   };
 }
@@ -587,7 +719,7 @@ function sessionToDailyPlan(session, effectiveCalendarDate) {
     practiceItemKey: item.practice_item_key,
     focusGroupKey: item.focus_group_key,
     required: item.is_required,
-    reviewScheduleId: item.review_source_evidence_id ?? undefined,
+    reviewScheduleId: item.review_schedule_id ?? undefined,
     selectionReason: item.selection_reason
   }));
   return {
@@ -619,11 +751,34 @@ function mapDatabaseError(message, code) {
     TICKET_RATE_LIMITED: ["TICKET_RATE_LIMITED", 429, true],
     OPTIONAL_EXTENSION_NOT_AVAILABLE: ["OPTIONAL_EXTENSION_NOT_AVAILABLE", 409, false],
     NEXT_LEARNING_DAY_NOT_AVAILABLE: ["NEXT_LEARNING_DAY_NOT_AVAILABLE", 409, false],
-    DELETION_EPOCH_REQUIRED: ["DELETION_EPOCH_REQUIRED", 409, false]
+    DELETION_EPOCH_REQUIRED: ["DELETION_EPOCH_REQUIRED", 409, false],
+    ASSESSMENT_TICKET_NONCE_MISMATCH: ["ASSESSMENT_TICKET_INVALID", 409, false],
+    ASSESSMENT_CAPTURE_EXPIRED: ["ASSESSMENT_CAPTURE_EXPIRED", 409, false],
+    ASSESSMENT_SUBMISSION_EXPIRED: ["ASSESSMENT_SUBMISSION_EXPIRED", 409, false],
+    DELETE_REQUEST_CONFLICT: ["DELETE_REQUEST_CONFLICT", 409, false],
+    EXPORT_TOO_LARGE: ["EXPORT_TOO_LARGE", 413, false],
+    EXPORT_SIZE_LIMIT_EXCEEDED: ["EXPORT_TOO_LARGE", 413, false]
   };
   const mapped = known[message];
   if (mapped) return new ApiError(mapped[0], "学習状態を更新できませんでした。", mapped[1], mapped[2]);
   return new ApiError("DATABASE_OPERATION_FAILED", "学習状態を更新できませんでした。", code === "42501" ? 403 : 502, true);
+}
+
+function publicOutboxPolicy(config) {
+  const values = {
+    retention_seconds: config.v2OutboxRetentionSeconds,
+    max_items: config.v2OutboxMaxItems,
+    max_bytes: config.v2OutboxMaxBytes,
+    backoff_base_seconds: config.v2OutboxBackoffBaseSeconds,
+    backoff_max_seconds: config.v2OutboxBackoffMaxSeconds
+  };
+  return Object.values(values).every((value) => Number.isSafeInteger(value) && value > 0) ? values : null;
+}
+
+function hasLiveLearningConfiguration(config) {
+  return Boolean(config.v2CaptureWindowSeconds && config.v2SubmissionWindowSeconds &&
+    config.v2SpeechTokenTtlSeconds && config.v2ProviderProjectionMaxBytes &&
+    config.v2TicketRateLimitWindowSeconds && config.v2TicketRateLimitMax && publicOutboxPolicy(config));
 }
 
 function assertAllowedKeys(value, allowed) {

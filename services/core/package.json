@@ -13,12 +13,21 @@
     "./v2": {
       "types": "./dist/v2/index.d.ts",
       "import": "./dist/v2/index.js"
+    },
+    "./v2/normalizer": {
+      "types": "./dist/v2/normalizer.d.ts",
+      "import": "./dist/v2/normalizer.js"
+    },
+    "./v2/normalizer-pure": {
+      "types": "./dist/v2/normalizer.d.ts",
+      "import": "./dist/v2/normalizer.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
+    "prepare": "npm run build",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && node --test .test-build/tests/*.test.js",
     "build": "tsc -p tsconfig.build.json",

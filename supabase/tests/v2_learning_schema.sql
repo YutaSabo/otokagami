@@ -23,8 +23,8 @@ begin
     from information_schema.tables
     where table_schema = 'public'
       and table_type = 'BASE TABLE'
-  ) <> 36 then
-    raise exception 'S6-04/S6-07 schema failed: expected 35 existing plus assessment_tickets';
+  ) <> 38 then
+    raise exception 'S6-08 schema failed: expected 36 existing plus review receipt and deletion ledger';
   end if;
 
   foreach new_table_name in array new_tables loop
@@ -62,8 +62,8 @@ begin
     end if;
   end loop;
 
-  if (select count(*) from pg_policies where schemaname = 'public') <> 64 then
-    raise exception 'S6-04 RLS failed: expected 53 existing plus 11 new policies';
+  if (select count(*) from pg_policies where schemaname = 'public') <> 65 then
+    raise exception 'S6-08 RLS failed: expected 64 existing plus one review receipt policy';
   end if;
 
   if (select count(*) from public.program_enrollments) <> 0

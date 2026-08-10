@@ -21,8 +21,18 @@ export function getApiEnv(env = process.env, options = {}) {
     azureSpeechLocale: env.AZURE_SPEECH_LOCALE ?? "en-US",
     azureAssessmentMode: env.AZURE_ASSESSMENT_MODE || "auto",
     v2AssessmentTicketTtlSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_TICKET_TTL_SECONDS),
+    v2CaptureWindowSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_CAPTURE_WINDOW_SECONDS),
+    v2SubmissionWindowSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_SUBMISSION_WINDOW_SECONDS),
+    v2SpeechTokenTtlSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_SPEECH_TOKEN_TTL_SECONDS),
+    v2ProviderProjectionMaxBytes: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_PROVIDER_PROJECTION_MAX_BYTES),
     v2TicketRateLimitWindowSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_RATE_LIMIT_WINDOW_SECONDS),
     v2TicketRateLimitMax: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_RATE_LIMIT_MAX),
+    v2OutboxRetentionSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_RETENTION_SECONDS),
+    v2OutboxMaxItems: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_MAX_ITEMS),
+    v2OutboxMaxBytes: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_MAX_BYTES),
+    v2OutboxBackoffBaseSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_BACKOFF_BASE_SECONDS),
+    v2OutboxBackoffMaxSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_BACKOFF_MAX_SECONDS),
+    v2ExportMaxBytes: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_EXPORT_MAX_BYTES),
     freeTextDailySoftCap: Number(env.FREE_TEXT_DAILY_SOFT_CAP || 20),
     ttsSignedUrlTtlSeconds: Number(env.TTS_SIGNED_URL_TTL_SECONDS || 3600)
   };

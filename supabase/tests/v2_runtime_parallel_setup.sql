@@ -21,14 +21,14 @@ select public.create_v2_daily_session_secure(
     {"position":2,"slotRole":"contrast","promptRole":"contrast","practiceItemKey":"parallel-2","focusGroupKey":"parallel-focus","selectionReason":"standard","required":true,"referenceText":"sink","referenceTextVersion":"v1","expectedFocusRepresentation":"s","targetLocator":{"wordIndex":0,"phonemeIndex":0}},
     {"position":3,"slotRole":"transfer_word","promptRole":"transfer_word","practiceItemKey":"parallel-3","focusGroupKey":"parallel-focus","selectionReason":"standard","required":true,"referenceText":"thought","referenceTextVersion":"v1","expectedFocusRepresentation":"θ","targetLocator":{"wordIndex":0,"phonemeIndex":0}},
     {"position":4,"slotRole":"sentence","promptRole":"sentence","practiceItemKey":"parallel-4","focusGroupKey":"parallel-focus","selectionReason":"standard","required":true,"referenceText":"Think now","referenceTextVersion":"v1","expectedFocusRepresentation":"θ","targetLocator":{"wordIndex":0,"phonemeIndex":0}},
-    {"position":5,"slotRole":"review","promptRole":"transfer_word","practiceItemKey":"parallel-5","focusGroupKey":"parallel-focus","selectionReason":"review_substitute_transfer_word","required":true,"referenceText":"thick","referenceTextVersion":"v1","expectedFocusRepresentation":"θ","targetLocator":{"wordIndex":0,"phonemeIndex":0}}
+    {"position":5,"slotRole":"practical_sentence","promptRole":"practical_sentence","practiceItemKey":"parallel-5","focusGroupKey":"parallel-focus","selectionReason":"standard","required":true,"referenceText":"Think about it","referenceTextVersion":"v1","expectedFocusRepresentation":"θ","targetLocator":{"wordIndex":0,"phonemeIndex":0}}
   ]'::jsonb,
   's6-07-parallel:1', null, now()
 );
 
-select public.issue_v2_assessment_ticket(
+select public.issue_v2_assessment_ticket_v2(
   'a9090909-9090-4909-8909-909090909090',
   (select id from public.program_session_items where user_id='a9090909-9090-4909-8909-909090909090' and position=1),
-  'initial', repeat('8',64), 0, 600, 60, 3, now(), null
+  'initial', repeat('8',64), 0, 300, 600, 60, 3, now(), null
 );
 reset role;
