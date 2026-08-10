@@ -186,19 +186,17 @@ RevenueCat webhookは認証し、再送に耐える。商品ID、Offering、Pack
 - 学習削除でtrialを再付与しない。
 - 端末ローカル音声の削除はアプリが担当し、サーバー結果と両方の完了/失敗を表示する。
 - 書き出しへ音声、秘密、内部ログ、他ユーザーデータを含めない。
-- 削除と再送の競合を考慮する。具体方式はTBD。
+- v2書き出しはservice-role専用RPCで本人所有のv1/v2/legacy学習データを一貫したsnapshotとして返し、ticket、nonce、payload hash、音声、URI、秘密を除外する。
+- v2学習削除はidempotency key付きservice-role専用RPCでuser lock、deletion epoch、削除件数、trial/購読保持を1 transactionで確定する。端末SQLiteのdeletion barrierは同じrequest IDでACK消失後も再開する。
 
 ## 14. 現行APIとの境界
 
-現在実装には`/api/bootstrap`、`/api/access-status`、`/api/daily-session`、`/api/speech-token`、`/api/assess`、進捗、課金、自由入力、TTS、助言、Python内部API等がある。
+凍結v1には`/api/bootstrap`、`/api/access-status`、`/api/daily-session`、`/api/speech-token`、`/api/assess`、進捗、課金、自由入力、TTS、助言、Python内部API等がある。新Mobileは独立した`/api/v2`のbootstrap、access、daily session、speech token、attempt、review/session completion、progress、reports、export、deleteだけを使用する。
 
-新仕様でも認証、短期トークン、Azure結果正規化、RevenueCat、書き出し・削除の基礎は再利用候補である。一方、自由入力、実行時TTS/助言、旧集計はMVP中心経路の対象外。URLの維持・廃止は第4段階以降に決める。第3段階ではAPIコードを変更しない。
+v2はserver-onlyの`off`／`read_only`／`learning` gateを持ち、未設定時は`off`である。v1 route、table、行、Python/OpenAI/Piper serviceは互換期間中保持するが、新MVP中心経路から呼ばない。
 
 ## 15. TBD
 
-- 具体的なURL、request/response schema
-- 正規化と保存を同一応答でどう分離するか
-- RPC/outbox/queue/再計算の選択
 - レート制限値
 - 正式な性能SLO
 - 旧API廃止時期

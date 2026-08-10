@@ -144,6 +144,9 @@ P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしな�
 - 音声、秘密、内部不正防止値をexportへ含めない。
 - 学習削除でtrialを再付与しない。
 - deletionと未送信outboxの競合を安全に扱う。
+- 同一delete requestの並行再送でepochが一度だけ増える。
+- attempt対deleteが、delete前保存後同transaction削除またはdelete後epoch拒否へ収束する。
+- 端末deletion barrierがACK消失・process終了後に同じrequest IDで再開する。
 
 ## 8. DB・RLSテスト
 
@@ -157,7 +160,7 @@ P95 3秒、成功率、判定しきい値は、実測前に正式PASSへしな�
 - same-day durable evidenceとProgram Day completionの二重作成を防ぐ。
 - delete後に孤立データが残らない。
 
-具体SQLとmigrationは本段階の対象外。
+S6-08以降はfresh DBとstaging復元cloneで、実装済みSQL/RPCの正負・並行テストを行う。Hosted実データへのdelete RPC実行はテスト対象にしない。
 
 ## 9. コンテンツ受け入れ
 
