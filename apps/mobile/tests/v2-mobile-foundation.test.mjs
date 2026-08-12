@@ -13,6 +13,7 @@ test("v2 API client preserves typed errors and sends the atomic deletion contrac
     baseUrl: "https://api.example.test",
     getAccessToken: async () => "public-user-session",
     requestTimeoutMs:1000,
+    responseMaxBytes:1_048_576,
     fetchImpl: async (url, init) => {
       requests.push({ url, init });
       return Response.json({ ok: true, data: { deletion_epoch: 3 } });
@@ -32,6 +33,7 @@ test("v2 API client preserves typed errors and sends the atomic deletion contrac
     baseUrl: "https://api.example.test",
     getAccessToken: async () => "public-user-session",
     requestTimeoutMs:1000,
+    responseMaxBytes:1_048_576,
     fetchImpl: async () => Response.json({
       ok: false,
       error: { code: "DELETION_EPOCH_CONFLICT", message: "conflict", retryable: false }
@@ -49,10 +51,26 @@ test("v2 API client fails closed without a measured timeout and aborts bounded r
   const missing=createV2ApiClient({baseUrl:"https://api.example.test",getAccessToken:async()=>"session"});
   await assert.rejects(()=>missing.bootstrap(),(error)=>error.code==="V2_CLIENT_TIMEOUT_CONFIG_REQUIRED");
   const timed=createV2ApiClient({
-    baseUrl:"https://api.example.test",getAccessToken:async()=>"session",requestTimeoutMs:1,
+    baseUrl:"https://api.example.test",getAccessToken:async()=>"session",requestTimeoutMs:1,responseMaxBytes:1_048_576,
     fetchImpl:(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"}))))
   });
   await assert.rejects(()=>timed.bootstrap(),(error)=>error.code==="REQUEST_TIMEOUT"&&error.retryable===true);
+
+  const stalledBody=createV2ApiClient({
+    baseUrl:"https://api.example.test",getAccessToken:async()=>"session",requestTimeoutMs:5,responseMaxBytes:1_048_576,
+    fetchImpl:async()=>new Response(new ReadableStream({start(){}}),{status:200})
+  });
+  await assert.rejects(()=>stalledBody.bootstrap(),(error)=>error.code==="REQUEST_TIMEOUT"&&error.retryable===true);
+});
+
+test("v2 API client rejects a response larger than the injected verified limit",async()=>{
+  const client=createV2ApiClient({baseUrl:"https://api.example.test",getAccessToken:async()=>"session",
+    requestTimeoutMs:1000,responseMaxBytes:32,
+    fetchImpl:async()=>new Response(JSON.stringify({ok:true,data:{value:"x".repeat(80)}}),{
+      headers:{"content-type":"application/json"}
+    })
+  });
+  await assert.rejects(()=>client.bootstrap(),(error)=>error.code==="RESPONSE_TOO_LARGE"&&error.retryable===false);
 });
 
 test("v2 shell is fail-closed while an on-device result can advance before ACK", () => {
@@ -111,12 +129,14 @@ test("new shell replaces default legacy flow without changing durable app identi
 
 test("center question UI is action-focused, accessible, and does not reintroduce gamification", async () => {
   const source = await readFile(new URL("../src/v2/V2PracticeShell.tsx", import.meta.url), "utf8");
-  for (const text of ["今日の音", "焦点音", "端末に保存済み・同期待ち", "修正前と再挑戦", "次の課題へ"]) {
+  for (const text of ["今日の音", "焦点音", "端末に保存済み・同期待ち", "修正前と再挑戦", "次の課題へ",
+    "今日を完了","追加練習へ","ゆっくりのお手本を聞く"]) {
     assert.match(source, new RegExp(text));
   }
   assert.match(source, /accessibilityHint/);
   assert.match(source, /accessibilityLiveRegion/);
   assert.match(source, /minHeight: 52/);
+  assert.match(source, /technicalValid/);
   assert.doesNotMatch(source, /総合点|レベル|バッジ|称号|全音素/);
 });
 

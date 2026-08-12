@@ -134,7 +134,7 @@ P95 3秒、成功率等は現時点で`実機検証目標`。正式な合格値�
 - 環境をProductionと明確に分ける。
 - mobile、API、Supabase、RevenueCat sandboxの組み合わせを記録する。
 - 旧Python/OpenAI/Piper環境が存在しても、新MVP中心経路で呼ばれないことを確認する。
-- Hosted `otokagami-staging`はS6-08.1 schemaとvalidation-only教材1行まで承認済み適用・照合済み。教材は`draft`／`development_validation`でtester accessは0件、v2 modeは`off`である。後続DMLや環境変更は、確定内容の個別承認前は未適用として扱う。
+- Hosted `otokagami-staging`はS6-08.2 schemaとvalidation-only教材1行まで承認済み適用・照合済み。教材は`draft`／`development_validation`でtester accessは0件、v2学習は未有効である。後続DMLや環境変更は、確定内容の個別承認前は未適用として扱う。
 - Vercel Previewが自動作成されても、Production承認にはならない。
 - validation-only教材を使う場合は、branch Preview、Development client、server-only flag、exact release ID、tester/installation制限をすべて要求し、Production/public contentへのfallbackを禁止する。
 - validation-only教材と実機smokeは公開教材104件・音声208件・助言21件・図解8件の完成数へ含めない。

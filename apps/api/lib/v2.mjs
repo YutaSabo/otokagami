@@ -126,7 +126,7 @@ export function createV2Repository(config, fetchImpl = fetch) {
       });
     },
     async createValidationDailySession(command) {
-      return request("/rpc/create_v2_validation_daily_session_secure", {
+      return request("/rpc/create_v2_validation_daily_session_secure_v2", {
         method: "POST",
         body: JSON.stringify(command)
       });
@@ -135,30 +135,30 @@ export function createV2Repository(config, fetchImpl = fetch) {
       return request("/rpc/refresh_v2_review_slot_secure", { method: "POST", body: JSON.stringify(command) });
     },
     async persistAttempt(command) {
-      return request("/rpc/persist_v2_attempt_v3", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/persist_v2_attempt_v4", { method: "POST", body: JSON.stringify(command) });
     },
     async issueAssessmentTicket(command) {
-      return request("/rpc/issue_v2_assessment_ticket_v3", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/issue_v2_assessment_ticket_v4", { method: "POST", body: JSON.stringify(command) });
     },
     async recoverAssessmentTicket(command) {
-      return request("/rpc/recover_v2_assessment_ticket", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/recover_v2_assessment_ticket_v2", { method: "POST", body: JSON.stringify(command) });
     },
     async cancelAssessmentTicket(command) {
-      return request("/rpc/cancel_v2_assessment_ticket", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/cancel_v2_assessment_ticket_v2", { method: "POST", body: JSON.stringify(command) });
     },
     async completeSession(command) {
       return request("/rpc/complete_v2_program_day_secure", { method: "POST", body: JSON.stringify(command) });
     },
     async completeValidationSession(command) {
-      return request("/rpc/complete_v2_validation_session_secure", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/complete_v2_validation_session_secure_v2", { method: "POST", body: JSON.stringify(command) });
     },
     async completeReview(command) {
-      return request("/rpc/complete_v2_review_submission_v2", { method: "POST", body: JSON.stringify(command) });
+      return request("/rpc/complete_v2_review_submission_v3", { method: "POST", body: JSON.stringify(command) });
     },
     async getProgress(userId) {
       const [enrollment, sessions, focusStates, reviews] = await Promise.all([
         this.getEnrollment(userId),
-        request(`/program_day_sessions?user_id=eq.${encode(userId)}&select=id,learning_day_sequence,trial_program_day,status,originating_calendar_date,completed_calendar_date,focus_group_key&order=learning_day_sequence.asc`),
+        request(`/program_day_sessions?user_id=eq.${encode(userId)}&validation_only=eq.false&select=id,learning_day_sequence,trial_program_day,status,originating_calendar_date,completed_calendar_date,focus_group_key&order=learning_day_sequence.asc`),
         request(`/focus_states_v2?user_id=eq.${encode(userId)}&select=*&order=focus_group_key.asc`),
         request(`/review_schedules?user_id=eq.${encode(userId)}&select=*&order=review_due_date.asc`)
       ]);
@@ -304,7 +304,12 @@ export async function v2DailySession({
             expectedFocusRepresentation: source.expectedFocusRepresentation,
             targetLocator: source.targetLocator,
             nextActionKey: source.nextActionKey ?? null,
-            adviceVersion: source.adviceVersion ?? null
+            adviceVersion: source.adviceVersion ?? null,
+            coachText: source.coachText ?? null,
+            referenceAudioStandardUrl: source.referenceAudio?.standardUrl ?? null,
+            referenceAudioSlowUrl: source.referenceAudio?.slowUrl ?? null,
+            referenceAudioVersion: source.referenceAudio?.version ?? null,
+            referenceAudioManifestSha256: source.referenceAudio?.manifestSha256 ?? null
           } : null
         });
         const refreshed = await context.repository.getActiveSession(context.user.id);
@@ -383,6 +388,7 @@ export async function v2DailySession({
       targetLocator: source.targetLocator,
       nextActionKey: source.nextActionKey ?? null,
       adviceVersion: source.adviceVersion ?? null,
+      coachText: source.coachText ?? null,
       referenceAudioStandardUrl: source.referenceAudio?.standardUrl ?? null,
       referenceAudioSlowUrl: source.referenceAudio?.slowUrl ?? null,
       referenceAudioVersion: source.referenceAudio?.version ?? null,
@@ -431,14 +437,19 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
       p_nonce_sha256: canonicalPayloadSha256(body.assessment_ticket_nonce),
       p_server_now: now.toISOString()
     };
-    if (operation === "cancel") return context.repository.cancelAssessmentTicket(command);
+    const installationSha256 = validationRequestDigest(context);
+    command.p_validation_installation_sha256 = installationSha256;
+    if (operation === "cancel") {
+      command.p_reason = "client_cancelled";
+      return context.repository.cancelAssessmentTicket(command);
+    }
     const recovered = await context.repository.recoverAssessmentTicket(command);
     if (recovered.status !== "issued") {
       throw new ApiError("ASSESSMENT_TICKET_INVALID","判定チケットは利用できません。",409,false);
     }
     const recoveredItem = await context.repository.getSessionItem(context.user.id, recovered.session_item_id);
     if (!recoveredItem) throw new ApiError("ASSESSMENT_TICKET_INVALID", "判定チケットを確認できません。", 409, false);
-    if (recoveredItem.session.validation_only) assertValidationSessionRequest(context);
+    if (recoveredItem.session.validation_only) validationInstallationSha256(context, recoveredItem.session);
     if (!recoveredItem.session.validation_only) {
       const access=await getV2Access(context.repository,context.user.id,context.config,now);
       if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED","学習を続けるには購読が必要です。",402,false);
@@ -464,7 +475,9 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
   if (!item || !["planned", "in_progress"].includes(item.session.status) || !item.reference_text || !item.target_locator) {
     throw new ApiError("SESSION_ITEM_NOT_AVAILABLE", "この課題は利用できません。", 404, false);
   }
-  if (item.session.validation_only) assertValidationSessionRequest(context);
+  const validationInstallation = item.session.validation_only
+    ? validationInstallationSha256(context, item.session)
+    : null;
   if (!item.session.validation_only) {
     const access=await getV2Access(context.repository,context.user.id,context.config,now);
     if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED","学習を続けるには購読が必要です。",402,false);
@@ -486,8 +499,12 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
     p_rate_window_seconds: context.config.v2TicketRateLimitWindowSeconds,
     p_rate_limit_max: context.config.v2TicketRateLimitMax,
     p_issued_at: now.toISOString(),
-    p_entitlement_id: context.config.v2RevenueCatEntitlementId
+    p_entitlement_id: context.config.v2RevenueCatEntitlementId,
+    p_validation_installation_sha256: validationInstallation
   });
+  if (ticket.status !== "issued") {
+    throw new ApiError("ASSESSMENT_TICKET_INVALID", "判定チケットは利用できません。", 409, false);
+  }
   let token;
   try {
     token = await fetchAzureSpeechToken(context.config, fetchImpl);
@@ -496,7 +513,9 @@ export async function v2SpeechToken({ request, env = process.env, fetchImpl = fe
       p_user_id: context.user.id,
       p_ticket_request_id: body.ticket_request_id,
       p_nonce_sha256: canonicalPayloadSha256(nonce),
-      p_server_now: now.toISOString()
+      p_server_now: now.toISOString(),
+      p_validation_installation_sha256: validationInstallation,
+      p_reason: "token_issue_failed"
     }).catch(() => undefined);
     throw error;
   }
@@ -589,7 +608,9 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
   }
   const item = await context.repository.getSessionItem(context.user.id, body.session_item_id);
   if (!item) throw new ApiError("SESSION_ITEM_NOT_AVAILABLE", "この課題は利用できません。", 404, false);
-  if (item.session.validation_only) assertValidationSessionRequest(context);
+  const validationInstallation = item.session.validation_only
+    ? validationInstallationSha256(context, item.session)
+    : null;
   if (!item.session.validation_only) {
     const access=await getV2Access(context.repository,context.user.id,context.config,now);
     if (!access.can_start_learning) throw new ApiError("ACCESS_REQUIRED","学習を続けるには購読が必要です。",402,false);
@@ -625,9 +646,10 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
     assessmentTicketId: body.assessment_ticket_id,
     ticketRequestId: body.ticket_request_id,
     deletionEpoch: body.deletion_epoch,
-    recordingStartedAt: body.recording_started_at,
-    capturedAt: body.captured_at,
-    providerResultReceivedAt: body.provider_result_received_at,
+    assessmentTicketNonceSha256: canonicalPayloadSha256(body.assessment_ticket_nonce),
+    recordingStartedAt: new Date(body.recording_started_at).toISOString(),
+    capturedAt: new Date(body.captured_at).toISOString(),
+    providerResultReceivedAt: new Date(body.provider_result_received_at).toISOString(),
     normalized
   };
   const attemptedAt = now.toISOString();
@@ -661,7 +683,8 @@ export async function v2PersistAttempt({ request, env = process.env, fetchImpl =
     p_next_action_key: normalized.nextActionKey,
     p_capability_flags: normalized.capabilityFlags,
     p_normalized_detail: normalized.normalizedDetail,
-    p_entitlement_id: context.config.v2RevenueCatEntitlementId
+    p_entitlement_id: context.config.v2RevenueCatEntitlementId,
+    p_validation_installation_sha256: validationInstallation
   });
   return { ...result, result: normalized };
 }
@@ -675,7 +698,9 @@ export async function v2CompleteSession({ request, env = process.env, fetchImpl 
   assertUuidOrBadRequest(body?.completion_idempotency_key, "completion_idempotency_key");
   const session = await context.repository.getActiveSession(context.user.id);
   if (!session || session.id !== body.session_id) throw new ApiError("SESSION_NOT_AVAILABLE", "学習セッションが見つかりません。", 404, false);
-  if (session.validation_only) assertValidationSessionRequest(context);
+  const validationInstallation = session.validation_only
+    ? validationInstallationSha256(context, session)
+    : null;
   const completedAt = now.toISOString();
   const calendarDate = calendarDateFromInstant(completedAt, session.timezone);
   const payloadHash = canonicalPayloadSha256({ sessionId: session.id, completionIdempotencyKey: body.completion_idempotency_key });
@@ -691,7 +716,10 @@ export async function v2CompleteSession({ request, env = process.env, fetchImpl 
     if (typeof context.repository.completeValidationSession !== "function") {
       throw new ApiError("VALIDATION_CONTENT_NOT_READY", "検証用セッションを完了できません。", 503, false);
     }
-    return context.repository.completeValidationSession(completionCommand);
+    return context.repository.completeValidationSession({
+      ...completionCommand,
+      p_installation_sha256: validationInstallation
+    });
   }
   return context.repository.completeSession({
     ...completionCommand,
@@ -825,6 +853,8 @@ function sanitizeSession(session) {
       expected_focus_representation: item.expected_focus_representation,
       target_locator: item.target_locator,
       next_action_key: item.next_action_key,
+      advice_version: item.advice_version,
+      coach_text: item.coach_text,
       review_schedule_id: item.review_schedule_id,
       review_source_evidence_id: item.review_source_evidence_id,
       review_due_date: item.review_due_date,
@@ -868,6 +898,22 @@ function assertValidationSessionRequest(context) {
   } catch {
     throw new ApiError("VALIDATION_CONTENT_NOT_READY","検証経路は利用できません。",403,false);
   }
+}
+
+function validationRequestDigest(context) {
+  if (!context.config.v2ValidationContentEnabled) return null;
+  assertValidationSessionRequest(context);
+  return canonicalPayloadSha256(
+    context.request.headers.get("x-otokagami-installation-id") ?? ""
+  );
+}
+
+function validationInstallationSha256(context, session) {
+  const digest = validationRequestDigest(context);
+  if (!digest || session.validation_installation_sha256 !== digest) {
+    throw new ApiError("VALIDATION_CONTENT_NOT_READY", "検証経路は利用できません。", 403, false);
+  }
+  return digest;
 }
 
 function sessionToDailyPlan(session, effectiveCalendarDate) {
@@ -922,7 +968,16 @@ function mapDatabaseError(message, code) {
     ASSESSMENT_SUBMISSION_EXPIRED: ["ASSESSMENT_SUBMISSION_EXPIRED", 409, false],
     DELETE_REQUEST_CONFLICT: ["DELETE_REQUEST_CONFLICT", 409, false],
     EXPORT_TOO_LARGE: ["EXPORT_TOO_LARGE", 413, false],
-    EXPORT_SIZE_LIMIT_EXCEEDED: ["EXPORT_TOO_LARGE", 413, false]
+    EXPORT_SIZE_LIMIT_EXCEEDED: ["EXPORT_TOO_LARGE", 413, false],
+    VALIDATION_TESTER_NOT_ALLOWED: ["VALIDATION_CONTENT_NOT_READY", 403, false],
+    VALIDATION_INSTALLATION_REQUIRED: ["VALIDATION_CONTENT_NOT_READY", 403, false],
+    VALIDATION_BINDING_UNEXPECTED: ["VALIDATION_CONTENT_NOT_READY", 409, false],
+    ASSESSMENT_TICKET_CANCEL_REASON_INVALID: ["BAD_REQUEST", 400, false],
+    V2_ATTEMPT_CHRONOLOGY_INVALID: ["ATTEMPT_CHRONOLOGY_INVALID", 409, false],
+    V2_REVIEW_DUE_DATE_INVALID: ["REVIEW_NOT_AVAILABLE", 409, false],
+    V2_REVIEW_COMPLETION_INVALID: ["REVIEW_NOT_AVAILABLE", 409, false],
+    V2_VALIDATION_REVIEW_SUBSTITUTE_INVALID: ["CONTENT_NOT_READY", 503, false],
+    V2_PLAN_MUST_HAVE_FIVE_REQUIRED_AND_TWO_OPTIONAL: ["CONTENT_NOT_READY", 503, false]
   };
   const mapped = known[message];
   if (mapped) return new ApiError(mapped[0], "学習状態を更新できませんでした。", mapped[1], mapped[2]);

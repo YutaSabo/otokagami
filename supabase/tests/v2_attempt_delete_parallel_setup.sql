@@ -30,9 +30,9 @@ from unnest(array[
   '95959595-9595-4959-8959-959595959595'::uuid
 ]) as users(u);
 
-select public.issue_v2_assessment_ticket_v3(
+select public.issue_v2_assessment_ticket_v4(
   u,r,(select id from public.program_session_items where user_id=u and position=1),
-  'initial',n,0,300,600,60,3,now(),null
+  'initial',n,0,300,600,60,3,now(),null,null
 )
 from (values
   ('93939393-9393-4939-8939-939393939393'::uuid,'91919191-9191-4919-8919-919191919191'::uuid,repeat('a',64)),

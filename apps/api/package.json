@@ -8,6 +8,7 @@
     "lint": "tsc --noEmit",
     "pretest": "npm --workspace @pronunciation-mirror/core run build && npm run verify:validation-content",
     "test": "node --test tests/*.test.mjs",
+    "test:db-e2e": "node tests/integration/v2-db-e2e.mjs",
     "prebuild": "npm --workspace @pronunciation-mirror/core run build && npm run verify:validation-content",
     "verify:validation-content": "node ../../scripts/verify-validation-content.mjs",
     "build": "next build --webpack"

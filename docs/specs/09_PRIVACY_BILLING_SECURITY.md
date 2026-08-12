@@ -242,7 +242,7 @@ MVPは管理課題だけを判定する。実行時OpenAI助言、実行時Piper
 
 - 実価格、商品、Offering、Package
 - RevenueCat sandboxとwebhook実接続
-- Hosted SupabaseはS6-08.1補修schemaとvalidation-only教材1行まで承認済み適用・照合済み。tester accessは0件でv2 modeは`off`
+- Hosted SupabaseはS6-08.2補修schemaとvalidation-only教材1行まで承認済み適用・照合済み。tester accessは0件でv2学習は未有効
 - Azure外部データ保持設定
 - 退会・法的保持期間
 - ローカル音声・SQLite/WAL/SHMのfile protectionとbackup除外の実機証拠
