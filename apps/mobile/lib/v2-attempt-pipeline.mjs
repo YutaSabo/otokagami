@@ -1,11 +1,26 @@
-export function createV2AttemptPipeline({ api, native, normalizer, outbox, protectedTicketStore, ids, clock, triggerSync }) {
+export function createV2AttemptPipeline({ api, native, normalizer, outbox, ticketJournal, protectedTicketStore, ids, clock, triggerSync }) {
   let active = null;
   return Object.freeze({
-    async start({ item, purpose = "initial" }) {
+    async start({ item, userId, purpose = "initial" }) {
       if (active) throw codedError("ASSESSMENT_ALREADY_ACTIVE");
-      const token = await api.speechToken(item.id, purpose);
-      const handle = ids.materialHandle();
-      await protectedTicketStore.save(handle, token.assessment_ticket.nonce);
+      const reusable=await ticketJournal.findReusable(userId,item.id,purpose);
+      const handle=reusable?.protected_material_handle??ids.materialHandle();
+      const ticketRequestId=reusable?.ticket_request_id??ids.ticketRequestId();
+      let nonce=await protectedTicketStore.read(handle);
+      if(!nonce){nonce=ids.ticketNonce();await protectedTicketStore.save(handle,nonce);}
+      if(!reusable) await ticketJournal.begin({ticketRequestId,userId,sessionItemId:item.id,attemptPurpose:purpose,protectedMaterialHandle:handle});
+      let token;
+      if(reusable){
+        try{token=await api.recoverSpeechToken(ticketRequestId,nonce);}
+        catch(error){
+          if(!new Set(["ASSESSMENT_TICKET_INVALID","ASSESSMENT_TICKET_NOT_FOUND"]).has(error?.code)) throw error;
+          token=await api.speechToken(item.id,purpose,ticketRequestId,nonce);
+        }
+      }else token=await api.speechToken(item.id,purpose,ticketRequestId,nonce);
+      await ticketJournal.markReady(userId,ticketRequestId,{
+        captureExpiresAt:token.assessment_ticket.capture_expires_at,
+        submissionExpiresAt:token.assessment_ticket.submission_expires_at
+      });
       const requestId = ids.requestId();
       try {
         await native.prepare({
@@ -17,10 +32,14 @@ export function createV2AttemptPipeline({ api, native, normalizer, outbox, prote
         });
         await native.start(requestId);
       } catch (error) {
-        await protectedTicketStore.delete(handle);
+        try{
+          await api.cancelSpeechToken(ticketRequestId,nonce);
+          await ticketJournal.markCancelled?.(userId,ticketRequestId);
+          await protectedTicketStore.delete(handle);
+        }catch{/* keep the journal and nonce so response-loss recovery can retry cancellation */}
         throw error;
       }
-      active = { item, purpose, token, handle, requestId };
+      active = { item,userId,purpose,token,handle,requestId,ticketRequestId,recordingStartedAt:clock.now() };
       return { requestId, captureExpiresAt: token.assessment_ticket.capture_expires_at ?? token.assessment_ticket.expires_at };
     },
 
@@ -36,7 +55,8 @@ export function createV2AttemptPipeline({ api, native, normalizer, outbox, prote
         if (!Number.isSafeInteger(effectivePayloadLimit) || effectivePayloadLimit <= 0) {
           throw codedError("PROVIDER_PROJECTION_LIMIT_REQUIRED");
         }
-        const capturedAt = clock.now();
+        const providerResultReceivedAt = clock.now();
+        const capturedAt = providerResultReceivedAt;
         const projected = normalizer({
           providerPayload: nativeResult.rawJson,
           payloadByteLimit: effectivePayloadLimit,
@@ -76,14 +96,18 @@ export function createV2AttemptPipeline({ api, native, normalizer, outbox, prote
           projectionVersion: projected.projection.projectionVersion,
           contractVersion: context.token.contract_version,
           assessmentTicketId: context.token.assessment_ticket.id,
+          ticketRequestId: context.ticketRequestId,
           protectedMaterialHandle: context.handle,
+          recordingStartedAt: context.recordingStartedAt,
           capturedAt,
+          providerResultReceivedAt,
           captureExpiresAt: context.token.assessment_ticket.capture_expires_at ?? context.token.assessment_ticket.expires_at,
           submissionExpiresAt: context.token.assessment_ticket.submission_expires_at,
           dependencyCommandId: context.item.dependency_command_id ?? null,
           strictProjection: projected.projection,
           createdAt: capturedAt
         }, localResult);
+        await ticketJournal.markConsumed(context.userId,context.ticketRequestId);
         enqueued = true;
         // The primary result is available after the local transaction, before server acknowledgement.
         await onLocalResult({ ...localResult, syncState: "pending", commandId, localAudioSource: nativeResult.localAudioUri });
@@ -106,8 +130,14 @@ export function createV2AttemptPipeline({ api, native, normalizer, outbox, prote
       const context = active;
       active = null;
       await native.cancel(context.requestId).catch(() => undefined);
-      await protectedTicketStore.delete(context.handle);
-    }
+      const nonce=await protectedTicketStore.read(context.handle);
+      if(nonce) try{
+        await api.cancelSpeechToken(context.ticketRequestId,nonce);
+        await ticketJournal.markCancelled?.(context.userId,context.ticketRequestId);
+        await protectedTicketStore.delete(context.handle);
+      }catch{/* keep protected material for recover/cancel retry */}
+    },
+    get active(){return active!==null;}
   });
 }
 

@@ -64,6 +64,13 @@ export function createV2AudioRepository({ database, protectedStorage, clock }) {
       }
       return protectedStorage.resolveAudio(fileKey);
     },
+    async resolveRepresentative(correctionCycleId,attemptRole){
+      const row=await database.getFirstAsync(
+        "SELECT file_key FROM v2_audio_index WHERE correction_cycle_id=? AND attempt_role=? AND availability='available'",
+        correctionCycleId,attemptRole
+      );
+      return row?this.resolve(row.file_key):null;
+    },
     async sweep() {
       const rows = await database.getAllAsync(
         `SELECT file_key FROM v2_audio_index

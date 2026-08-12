@@ -31,6 +31,8 @@ export function V2PracticeShell({
   onStartRecording,
   onStopRecording,
   onGuidedRetry,
+  onPlayBefore,
+  onPlayAfter,
   guidedRetryAvailable = false,
   onNext
 }: {
@@ -46,10 +48,12 @@ export function V2PracticeShell({
   onStartRecording: () => void;
   onStopRecording: () => void;
   onGuidedRetry: () => void;
+  onPlayBefore?:()=>void;
+  onPlayAfter?:()=>void;
   guidedRetryAvailable?: boolean;
   onNext: () => void;
 }) {
-  if (readOnlyReason) {
+  if (readOnlyReason && !item) {
     return (
       <View style={styles.screen} accessibilityRole="summary">
         <Text style={styles.title}>Otokagami</Text>
@@ -76,6 +80,7 @@ export function V2PracticeShell({
       <Text style={styles.counter}>{currentIndex + 1} / {totalItems}</Text>
       <Text accessibilityRole="header" style={styles.prompt}>{item.reference_text}</Text>
       <Text style={styles.focus}>焦点音 /{item.expected_focus_representation}/</Text>
+      {readOnlyReason ? <Text style={styles.readOnlyBanner}>オフライン表示です。録音や学習状態の確定はできません。</Text> : null}
       <ActionButton
         label="お手本を聞く"
         hint="この課題の標準音声を再生します"
@@ -89,7 +94,7 @@ export function V2PracticeShell({
           label={localResult ? "もう一度録音" : "録音する"}
           hint="マイクで管理課題の発音を録音します"
           onPress={onStartRecording}
-          disabled={busy}
+          disabled={busy || Boolean(readOnlyReason)}
         />
       )}
       {busy ? (
@@ -123,6 +128,8 @@ export function V2PracticeShell({
                 修正前: {candidateLabel(comparison.before)}　→　再挑戦: {candidateLabel(comparison.after)}
               </Text>
               <Text style={styles.syncText}>変化の判定は、サーバー確認後の学習状態とは分けて扱います。</Text>
+              <ActionButton label="修正前を聞く" hint="端末に保存した代表録音を再生します" onPress={onPlayBefore??(()=>undefined)} secondary />
+              <ActionButton label="再挑戦を聞く" hint="端末に保存した代表録音を再生します" onPress={onPlayAfter??(()=>undefined)} secondary />
             </View>
           ) : null}
           {coachText ? <Text style={styles.coach}>{coachText}</Text> : null}
@@ -136,7 +143,7 @@ export function V2PracticeShell({
             label="次の課題へ"
             hint={canAdvance ? "端末に保存した結果を保ったまま次の管理課題へ進みます" : "結果を確認後に次へ進めます"}
             onPress={onNext}
-            disabled={!canAdvance}
+            disabled={!canAdvance && !readOnlyReason}
           />
         </View>
       ) : null}
@@ -200,5 +207,6 @@ const styles = StyleSheet.create({
   secondary: { backgroundColor: "#fff", borderColor: "#0c6b58", borderWidth: 1 },
   buttonText: { color: "#fff", fontSize: 17, fontWeight: "900" },
   secondaryText: { color: "#0c6b58" },
-  disabled: { opacity: 0.45 }
+  disabled: { opacity: 0.45 },
+  readOnlyBanner: { color: "#6c4608", backgroundColor: "#fff0d7", padding: 12, borderRadius: 8, fontSize: 15 }
 });

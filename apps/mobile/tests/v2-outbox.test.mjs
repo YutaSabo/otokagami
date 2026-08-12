@@ -3,6 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { createV2AttemptPipeline } from "../lib/v2-attempt-pipeline.mjs";
+import {canRequestAnotherTicket,nextRestoredPosition,validateV2SessionShape} from "../lib/v2-mobile-policy.mjs";
+import {createV2TicketJournal,V2_TICKET_JOURNAL_SCHEMA} from "../lib/v2-ticket-journal.mjs";
 import { V2_AUDIO_INDEX_SCHEMA, audioDeletionReason } from "../lib/v2-audio-lifecycle.mjs";
 import { V2_DELETION_SCHEMA, canSendLearningCommands, createV2DeletionCoordinator, nextDeletionAction } from "../lib/v2-deletion.mjs";
 import { V2_OUTBOX_SCHEMA, createV2OutboxRepository, createV2OutboxWorker } from "../lib/v2-outbox.mjs";
@@ -27,12 +29,12 @@ test("enqueue and local result are one transaction; FIFO dependencies wait for c
   await repository.enqueue(command("b", "a"), localResult());
   assert.equal((await repository.get("a")).sync_state, "pending");
 
-  const first = await repository.leaseNext({ leaseId: "lease-a", now: iso(0), leaseExpiresAt: iso(60) });
+  const first = await repository.leaseNext({userId:"user", leaseId: "lease-a", now: iso(0), leaseExpiresAt: iso(60) });
   assert.equal(first.command_id, "a");
-  const whileBlocked = await repository.leaseNext({ leaseId: "lease-b", now: iso(0), leaseExpiresAt: iso(60) });
+  const whileBlocked = await repository.leaseNext({userId:"user", leaseId: "lease-b", now: iso(0), leaseExpiresAt: iso(60) });
   assert.equal(whileBlocked, undefined);
   await repository.acknowledge("a", "lease-a", iso(1));
-  const second = await repository.leaseNext({ leaseId: "lease-b", now: iso(1), leaseExpiresAt: iso(60) });
+  const second = await repository.leaseNext({userId:"user", leaseId: "lease-b", now: iso(1), leaseExpiresAt: iso(60) });
   assert.equal(second.command_id, "b");
 });
 
@@ -54,13 +56,13 @@ test("review completion waits for the confirmed attempt and session completion w
   await repository.enqueue(command("attempt", null), localResult());
   await repository.enqueueControl(control("review", "review_completion", "attempt"));
   await repository.enqueueControl(control("complete", "session_completion", "review"));
-  assert.equal((await repository.leaseNext({ leaseId: "a", now: iso(0), leaseExpiresAt: iso(60) })).command_id, "attempt");
+  assert.equal((await repository.leaseNext({userId:"user", leaseId: "a", now: iso(0), leaseExpiresAt: iso(60) })).command_id, "attempt");
   await repository.acknowledge("attempt", "a", iso(1), "server-attempt");
-  const review = await repository.leaseNext({ leaseId: "r", now: iso(1), leaseExpiresAt: iso(60) });
+  const review = await repository.leaseNext({userId:"user", leaseId: "r", now: iso(1), leaseExpiresAt: iso(60) });
   assert.equal(review.command_id, "review");
   assert.equal(review.dependency_server_resource_id, "server-attempt");
   await repository.acknowledge("review", "r", iso(2), "server-review");
-  assert.equal((await repository.leaseNext({ leaseId: "c", now: iso(2), leaseExpiresAt: iso(60) })).command_id, "complete");
+  assert.equal((await repository.leaseNext({userId:"user", leaseId: "c", now: iso(2), leaseExpiresAt: iso(60) })).command_id, "complete");
 });
 
 test("single-lease worker recovers ACK loss and purges protected material after confirmation", async () => {
@@ -72,6 +74,7 @@ test("single-lease worker recovers ACK loss and purges protected material after 
   const deleted = [];
   let sends = 0;
   const worker = createV2OutboxWorker({
+    userId:"user",
     repository,
     api: {
       async send() { sends += 1; },
@@ -94,6 +97,24 @@ test("single-lease worker recovers ACK loss and purges protected material after 
   assert.equal(saved.protected_material_handle, null);
 });
 
+test("server ACK is durable before nonce cleanup and startup cleanup never resends confirmed work", async () => {
+  const db=sqliteAdapter();
+  await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository=createV2OutboxRepository(db);repository.setLimits(syncConfig());
+  await repository.enqueue(command("crash",null),localResult());
+  await repository.leaseNext({userId:"user",leaseId:"lease",now:iso(0),leaseExpiresAt:iso(60)});
+  await repository.acknowledge("crash","lease",iso(1),"server-attempt",{attempt_id:"server-attempt"});
+  const durable=await repository.get("crash");
+  assert.equal(durable.state,"confirmed");
+  assert.equal(durable.protected_material_handle,"material-crash");
+  assert.equal(durable.protected_material_cleanup_pending,1);
+  assert.equal((await repository.listProtectedMaterialCleanup("user")).length,1);
+  assert.equal(await repository.leaseNext({userId:"user",leaseId:"other",now:iso(2),leaseExpiresAt:iso(60)}),undefined);
+  await repository.finishProtectedMaterialCleanup("user","material-crash");
+  assert.equal((await repository.get("crash")).protected_material_handle,null);
+  assert.equal((await repository.listProtectedMaterialCleanup("user")).length,0);
+});
+
 test("expired submissions become permanent failures instead of remaining stuck", async () => {
   const db = sqliteAdapter();
   await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
@@ -103,6 +124,7 @@ test("expired submissions become permanent failures instead of remaining stuck",
   expired.submissionExpiresAt = iso(1);
   await repository.enqueue(expired, localResult());
   const worker = createV2OutboxWorker({
+    userId:"user",
     repository,
     api: { async send() { throw new Error("must not send"); }, classify() { return "retryable"; } },
     protectedMaterialStore: { async read() { return null; }, async delete() {} },
@@ -120,6 +142,29 @@ test("deletion barrier and epoch state recover deterministically after crashes",
   assert.equal(nextDeletionAction({ state: "server_pending", local_epoch: 2 }, 2), "retry_server_delete");
   assert.equal(nextDeletionAction({ state: "server_confirmed", local_epoch: 2 }, 3), "commit_server_epoch");
   assert.equal(nextDeletionAction({ state: "idle", local_epoch: 2 }, 3), "purge_stale_local");
+});
+
+test("session contract enforces required five, optional zero to two, and restores first unfinished item",()=>{
+ const items=Array.from({length:7},(_,i)=>({id:`i${i}`,position:i+1,required:i<5}));
+ assert.deepEqual(validateV2SessionShape({items}),{requiredCount:5,optionalCount:2});
+ assert.throws(()=>validateV2SessionShape({items:items.slice(0,4)}),error=>error.code==="REQUIRED_ITEM_COUNT_INVALID");
+ assert.equal(nextRestoredPosition({items},{i0:{},i1:{}}),2);
+});
+
+test("valid attempt guard stops after three while invalid attempts do not consume capacity",()=>{
+ const rows=[1,2,3].map(()=>({session_item_id:"item",technical_valid:1}));
+ rows.push({session_item_id:"item",technical_valid:0});
+ assert.equal(canRequestAnotherTicket(rows,"item"),false);
+ assert.equal(canRequestAnotherTicket(rows.filter((_,i)=>i!==2),"item"),true);
+});
+
+test("ticket request intent survives a lost issue response",async()=>{
+ const db=sqliteAdapter();await db.execAsync(V2_TICKET_JOURNAL_SCHEMA);
+ const journal=createV2TicketJournal(db,{now:()=>iso(0)});
+ await journal.begin({ticketRequestId:"req",userId:"user",sessionItemId:"item",attemptPurpose:"initial",protectedMaterialHandle:"handle"});
+ assert.equal((await journal.findReusable("user","item","initial")).ticket_request_id,"req");
+ await journal.markReady("user","req",{captureExpiresAt:iso(60),submissionExpiresAt:iso(600)});
+ assert.equal((await journal.get("user","req")).state,"ready");
 });
 
 test("deletion cleanup is locally atomic and resumes the same server request after a lost response", async () => {
@@ -155,17 +200,20 @@ test("deletion cleanup is locally atomic and resumes the same server request aft
       return { deletion_epoch: 1 };
     }
   };
-  const coordinator = createV2DeletionCoordinator({ database: db, outbox: repository, audio, api, clock: { now: () => iso(1) } });
+  const coordinator = createV2DeletionCoordinator({
+    database: db,outbox: repository,audio,api,clock: { now: () => iso(1) },
+    protectedMaterialStore: { async delete() {} }
+  });
   await coordinator.begin({ requestId: "delete-request", userId: "user", localEpoch: 0 });
-  await assert.rejects(() => coordinator.resume(), /lost response/);
+  await assert.rejects(() => coordinator.resume("user"), /lost response/);
   assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_outbox_commands")).n, 0);
   assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_local_snapshots")).n, 0);
   assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_audio_index")).n, 0);
   assert.deepEqual(deletedFiles, ["opaque.wav"]);
-  assert.equal((await db.getFirstAsync("SELECT state FROM v2_deletion_control WHERE singleton_id=1")).state, "server_pending");
-  const completed = await coordinator.resume();
+  assert.equal((await db.getFirstAsync("SELECT state FROM v2_deletion_control WHERE user_id='user'")).state, "server_pending");
+  const completed = await coordinator.resume("user");
   assert.deepEqual(completed, { status: "completed", deletionEpoch: 1 });
-  const control = await db.getFirstAsync("SELECT state,local_epoch,pending_audio_keys_json FROM v2_deletion_control WHERE singleton_id=1");
+  const control = await db.getFirstAsync("SELECT state,local_epoch,pending_audio_keys_json FROM v2_deletion_control WHERE user_id='user'");
   assert.deepEqual({ ...control }, { state: "idle", local_epoch: 1, pending_audio_keys_json: "[]" });
   assert.equal(calls, 2);
 });
@@ -182,7 +230,7 @@ test("attempt pipeline displays local result and schedules sync without awaiting
   let releaseSync;
   const sync = new Promise((resolve) => { releaseSync = resolve; });
   const pipeline = createV2AttemptPipeline({
-    api: { async speechToken() { return ticket(); } },
+    api: { async speechToken() { return ticket(); },async recoverSpeechToken(){return ticket();} },
     native: {
       async prepare() {}, async start() {}, async cancel() {}, async deleteTemporary() {},
       async finish() { return { rawJson: { RecognitionStatus: "Success" }, localAudioUri: "temporary-local-file" }; }
@@ -198,12 +246,13 @@ test("attempt pipeline displays local result and schedules sync without awaiting
       };
     },
     outbox: { async enqueue() { events.push("enqueue"); } },
-    protectedTicketStore: { async save() {}, async delete() {} },
-    ids: { materialHandle: () => "handle", requestId: () => "request", commandId: () => "command", clientAttemptId: () => "attempt" },
+    ticketJournal:{async findReusable(){return null;},async begin(){},async markReady(){},async markConsumed(){}},
+    protectedTicketStore: { async save() {},async read(){return null;}, async delete() {} },
+    ids: { materialHandle: () => "handle",requestId:()=>"request",commandId:()=>"command",clientAttemptId:()=>"attempt",ticketRequestId:()=>"ticket-request",ticketNonce:()=>"nonce" },
     clock: { now: () => iso(0) },
     triggerSync: async () => { events.push("sync-started"); await sync; }
   });
-  await pipeline.start({ item: item() });
+  await pipeline.start({ item: item(),userId:"user" });
   const completed = await pipeline.finish({
     payloadByteLimit: 1000, userId: "user", sessionId: "session", deletionEpoch: 0,
     onLocalResult() { events.push("local-result"); }
@@ -235,7 +284,7 @@ function command(id, dependency) {
     assessmentLocale: "en-US", deletionEpoch: 0, referenceVersion: "reference-v1",
     normalizerVersion: "normalizer-v1", projectionVersion: "projection-v1", contractVersion: "contract-v1",
     assessmentTicketId: `ticket-${id}`, protectedMaterialHandle: `material-${id}`,
-    capturedAt: iso(0),
+    recordingStartedAt:iso(0),capturedAt:iso(1),providerResultReceivedAt:iso(2),
     captureExpiresAt: iso(60), submissionExpiresAt: iso(600), dependencyCommandId: dependency,
     strictProjection: { projectionVersion: "projection-v1", recognitionStatus: "success" }, createdAt: iso(0)
   };

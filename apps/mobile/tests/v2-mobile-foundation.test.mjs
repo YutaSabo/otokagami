@@ -12,6 +12,7 @@ test("v2 API client preserves typed errors and sends the atomic deletion contrac
   const client = createV2ApiClient({
     baseUrl: "https://api.example.test",
     getAccessToken: async () => "public-user-session",
+    requestTimeoutMs:1000,
     fetchImpl: async (url, init) => {
       requests.push({ url, init });
       return Response.json({ ok: true, data: { deletion_epoch: 3 } });
@@ -30,6 +31,7 @@ test("v2 API client preserves typed errors and sends the atomic deletion contrac
   const failed = createV2ApiClient({
     baseUrl: "https://api.example.test",
     getAccessToken: async () => "public-user-session",
+    requestTimeoutMs:1000,
     fetchImpl: async () => Response.json({
       ok: false,
       error: { code: "DELETION_EPOCH_CONFLICT", message: "conflict", retryable: false }
@@ -41,6 +43,16 @@ test("v2 API client preserves typed errors and sends the atomic deletion contrac
     assert.equal(classifyV2OutboxError(error), "permanent_failure");
     return true;
   });
+});
+
+test("v2 API client fails closed without a measured timeout and aborts bounded requests", async () => {
+  const missing=createV2ApiClient({baseUrl:"https://api.example.test",getAccessToken:async()=>"session"});
+  await assert.rejects(()=>missing.bootstrap(),(error)=>error.code==="V2_CLIENT_TIMEOUT_CONFIG_REQUIRED");
+  const timed=createV2ApiClient({
+    baseUrl:"https://api.example.test",getAccessToken:async()=>"session",requestTimeoutMs:1,
+    fetchImpl:(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener("abort",()=>reject(Object.assign(new Error("aborted"),{name:"AbortError"}))))
+  });
+  await assert.rejects(()=>timed.bootstrap(),(error)=>error.code==="REQUEST_TIMEOUT"&&error.retryable===true);
 });
 
 test("v2 shell is fail-closed while an on-device result can advance before ACK", () => {
