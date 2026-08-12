@@ -8,6 +8,12 @@
   "humanAudioReviewed": false,
   "azureAudioValidated": false,
   "audioVersion": "development-validation-samantha-en-us-v1",
+  "coachVersion": "development-validation-static-coach-v1",
+  "coachManifestSha256": "be91ca2cc96fb3b73a355005766b286edf0ee2473436f5457afb8d47a5e436d4",
+  "coach": {
+    "r_to_l": "舌先を上あごに付けず、舌の奥を少し引いて声を出します。唇を軽く丸めて、短く /r/ を始めましょう。",
+    "l_to_r": "舌先を上の歯ぐきに一度当ててから声を出します。音の始まりをはっきり作るとLに近づきます。"
+  },
   "manifestSha256": "84a11917749840d0aca4fb8d096e1f4126d6f56aeca9d2aa0d7f67a713a3d26c",
   "generation": {
     "tool": "macOS say + afconvert",

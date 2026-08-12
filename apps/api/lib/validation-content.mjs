@@ -12,13 +12,13 @@ export function createValidationContentRepository({ config, userId, installation
   if(contentVersionId!==manifest.contentVersionId) throw new Error("VALIDATION_CONTENT_VERSION_MISMATCH");
   const audio = Object.fromEntries(manifest.assets.map((asset) => [asset.key, asset]));
   const rows = [
-    row("validation-light-anchor", "anchor", "light", "seed-word-l-001", audio.light),
-    row("validation-right-contrast", "contrast", "right", "seed-word-r-001", audio.right),
-    row("validation-light-transfer", "transfer_word", "light", "seed-word-l-001", audio.light),
-    row("validation-read-sentence", "sentence", "I read it again.", "seed-sent-r-001", audio.read),
-    row("validation-right-review-substitute", "transfer_word", "right", "seed-word-r-001", audio.right),
-    row("validation-light-optional", "optional_extension", "light", "seed-word-l-001", audio.light),
-    row("validation-right-optional", "optional_extension", "right", "seed-word-r-001", audio.right)
+    row("validation-light-anchor", "anchor", "light", "seed-word-l-001", audio.light, "l_to_r"),
+    row("validation-right-contrast", "contrast", "right", "seed-word-r-001", audio.right, "r_to_l"),
+    row("validation-light-transfer", "transfer_word", "light", "seed-word-l-001", audio.light, "l_to_r"),
+    row("validation-read-sentence", "sentence", "I read it again.", "seed-sent-r-001", audio.read, "r_to_l"),
+    row("validation-right-review-substitute", "transfer_word", "right", "seed-word-r-001", audio.right, "r_to_l"),
+    row("validation-light-optional", "optional_extension", "light", "seed-word-l-001", audio.light, "l_to_r"),
+    row("validation-right-optional", "optional_extension", "right", "seed-word-r-001", audio.right, "r_to_l")
   ];
   return {
     validationOnly: true,
@@ -39,7 +39,7 @@ export function createValidationContentRepository({ config, userId, installation
     async listReviewSchedules() { return []; }
   };
 
-  function row(practiceItemKey, promptRole, referenceText, referenceTextVersion, asset) {
+  function row(practiceItemKey, promptRole, referenceText, referenceTextVersion, asset, adviceKey) {
     return {
       contentVersionId,
       practiceItemKey,
@@ -53,7 +53,9 @@ export function createValidationContentRepository({ config, userId, installation
       referenceTextVersion,
       expectedFocusRepresentation: referenceText === "light" ? "l" : "r",
       targetLocator: { wordIndex: referenceText === "I read it again." ? 1 : 0, phonemeIndex: 0 },
-      nextActionKey: null,
+      nextActionKey: adviceKey,
+      adviceVersion: 1,
+      coachText: manifest.coach[adviceKey],
       referenceAudio: {
         standardUrl: asset.standard.url,
         slowUrl: asset.slow.url,
@@ -69,7 +71,9 @@ function assertManifest(manifest) {
       !/^[0-9a-f]{64}$/.test(manifest.manifestSha256 ?? "") ||
       !/^[0-9a-f-]{36}$/.test(manifest.contentVersionId ?? "") ||
       manifest.stableReleaseId!=="development-validation-r-l" || manifest.version!==1 ||
-      manifest.focusGroupKey!=="r-l") {
+      manifest.focusGroupKey!=="r-l" || manifest.coachVersion!=="development-validation-static-coach-v1" ||
+      !/^[0-9a-f]{64}$/.test(manifest.coachManifestSha256 ?? "") ||
+      typeof manifest.coach?.r_to_l!=="string" || typeof manifest.coach?.l_to_r!=="string") {
     throw new Error("VALIDATION_CONTENT_MANIFEST_NOT_READY");
   }
   for (const asset of manifest.assets) {

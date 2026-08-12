@@ -4,10 +4,11 @@ import test from "node:test";
 import {
   AZURE_V2_CAPACITY_REFERENCE,
   AZURE_V2_TEST_PAYLOAD_MAX_BYTES,
+  canonicalPayloadSha256,
   projectAzureFocusPayload
 } from "@pronunciation-mirror/core/v2";
 import { ApiError } from "../lib/http.mjs";
-import { createValidationContentRepository } from "../lib/validation-content.mjs";
+import { createValidationContentRepository, VALIDATION_CONTENT_MANIFEST } from "../lib/validation-content.mjs";
 import {
   createEmptyV2ContentRepository,
   createV2Repository,
@@ -319,6 +320,9 @@ test("validation content requires non-production environment, explicit tester an
     status: "ready",
     contentVersionId:CONTENT,stableReleaseId:"development-validation-r-l",version:1,focusGroupKey:"r-l",
     audioVersion: "validation-v1",
+    coachVersion: "development-validation-static-coach-v1",
+    coachManifestSha256: hash,
+    coach: { r_to_l: "server-owned r coach", l_to_r: "server-owned l coach" },
     manifestSha256: hash,
     assets: [
       { key: "light", standard: variant("light-standard"), slow: variant("light-slow") },
@@ -331,6 +335,7 @@ test("validation content requires non-production environment, explicit tester an
     developmentClientMarker: "development-client", manifest
   });
   assert.equal((await repository.listContentCandidates()).length, 7);
+  assert.equal((await repository.listContentCandidates())[0].coachText, manifest.coach.l_to_r);
   assert.throws(() => createValidationContentRepository({
     config: { ...config, deploymentEnvironment: "production" }, userId: USER,
     installationId: "installation-a", developmentClientMarker: "development-client", manifest
@@ -343,6 +348,29 @@ test("validation content requires non-production environment, explicit tester an
     config, userId: USER, installationId: "installation-b",
     developmentClientMarker: "development-client", manifest
   }), /TESTER_NOT_ALLOWED/);
+});
+
+test("validation daily session preserves five required, two optional, review substitute, static coach and audio", async()=>{
+  const validationContentId=VALIDATION_CONTENT_MANIFEST.contentVersionId;
+  const repository=fakeRepository({validationContent:true,contentVersionId:validationContentId});
+  const env={...ENV,VERCEL_ENV:"preview",OTOKAGAMI_V2_VALIDATION_CONTENT_ENABLED:"true",
+    OTOKAGAMI_V2_VALIDATION_TESTER_USER_IDS:USER,OTOKAGAMI_V2_VALIDATION_INSTALLATION_IDS:"installation-a",
+    OTOKAGAMI_V2_VALIDATION_DEVELOPMENT_CLIENT_MARKER:"development-client",
+    OTOKAGAMI_V2_VALIDATION_CONTENT_VERSION_ID:validationContentId};
+  const result=await v2DailySession({
+    request:requestFor("daily-session",{timezone:"UTC"},true,{
+      "x-otokagami-installation-id":"installation-a",
+      "x-otokagami-development-client":"development-client"
+    }),env,repository,now:new Date("2026-08-13T01:00:00Z")
+  });
+  assert.equal(result.session.requiredItemCount,5);
+  assert.equal(result.session.optionalItemCount,2);
+  assert.equal(result.session.items[4].slot_role,"review");
+  assert.equal(result.session.items[4].prompt_role,"transfer_word");
+  assert.equal(result.session.items[0].next_action_key,"l_to_r");
+  assert.match(result.session.items[0].coach_text,/舌先/);
+  assert.match(result.session.items[0].referenceAudio.standardUrl,/validation-audio/);
+  assert.equal(repository.calls.validationSessions.length,1);
 });
 
 test("live v2 assessment fails closed when verified payload, expiry or outbox policy is absent", async () => {
@@ -410,6 +438,12 @@ test("attempt canonical hash includes capture chronology", async () => {
     repository: second
   });
   assert.notEqual(first.calls.attempts[0].p_payload_sha256, second.calls.attempts[0].p_payload_sha256);
+  const equivalent=fakeRepository({activeSession:sessionFixture()});
+  await v2PersistAttempt({request:requestFor("attempts",{
+    ...attemptBody(),recording_started_at:"2026-08-09T09:00:00+09:00",
+    captured_at:"2026-08-09T09:00:01+09:00",provider_result_received_at:"2026-08-09T09:00:02+09:00"
+  }),env:ENV,repository:equivalent});
+  assert.equal(first.calls.attempts[0].p_payload_sha256,equivalent.calls.attempts[0].p_payload_sha256);
 });
 
 test("attempt replay is idempotent, changed canonical payload conflicts, invalid does not consume valid ordinal and fourth valid is rejected", async () => {
@@ -507,7 +541,8 @@ test("session completion sends only server-derived date, hash and idempotency in
 });
 
 test("validation session completion uses the isolated receipt and never sends entitlement metadata", async () => {
-  const session = { ...sessionFixture(), validation_only: true };
+  const session = { ...sessionFixture(), validation_only: true,
+    validation_installation_sha256: canonicalPayloadSha256("installation-a") };
   const repository = fakeRepository({ activeSession: session });
   await v2CompleteSession({
     request: requestFor("session-completion", { session_id: SESSION, completion_idempotency_key: COMPLETION },true,{
@@ -523,7 +558,7 @@ test("validation session completion uses the isolated receipt and never sends en
   assert.equal(repository.calls.completions.length, 0);
   assert.deepEqual(Object.keys(repository.calls.validationCompletions[0]).sort(), [
     "p_calendar_date", "p_completed_at", "p_completion_idempotency_key",
-    "p_completion_payload_sha256", "p_session_id", "p_user_id"
+    "p_completion_payload_sha256", "p_installation_sha256", "p_session_id", "p_user_id"
   ]);
 });
 
@@ -734,7 +769,7 @@ function fakeRepository(options = {}) {
   let activeSession = options.activeSession ?? null;
   const attempts = new Map();
   let validCount = 0;
-  const calls = { attempts: [], completions: [], validationCompletions: [], reviewCompletions: [], createdItems: [], reviewRefreshes: [] };
+  const calls = { attempts: [], completions: [], validationCompletions: [], validationSessions: [], reviewCompletions: [], createdItems: [], reviewRefreshes: [] };
   return {
     calls,
     async authenticate(token) {
@@ -745,6 +780,7 @@ function fakeRepository(options = {}) {
     async getDeletionEpoch() { return options.missingDeletionEpoch ? null : (options.expectedDeletionEpoch ?? 0); },
     async getSubscriptionAccess() { return options.subscribed ?? false; },
     async getActiveContentVersion() { return options.activeContent === null ? null : { id: CONTENT, stable_release_id: "content-v2", version: 1, status: "active", assessment_locale: "en-US", coaching_locale: "ja-JP" }; },
+    async getContentVersion() { return { id:options.contentVersionId??CONTENT,stable_release_id:"development-validation-r-l",version:1,status:"draft",assessment_locale:"en-US",coaching_locale:"ja-JP",validation_only:true }; },
     async getActiveSession() { return activeSession; },
     async getLatestCompletedSession() { return options.latestCompletedSession ?? null; },
     async listSessionItems() { return activeSession?.items ?? []; },
@@ -756,6 +792,7 @@ function fakeRepository(options = {}) {
       calls.createdItems = command.p_items;
       activeSession = {
         ...sessionFixture(),
+        content_version_id:command.p_content_version_id,
         status: "planned",
         items: command.p_items.map((item, index) => ({
           id: index === 0 ? ITEM : `0000000${index}-0000-4000-8000-00000000000${index}`,
@@ -772,6 +809,8 @@ function fakeRepository(options = {}) {
           expected_focus_representation: item.expectedFocusRepresentation,
           target_locator: item.targetLocator,
           next_action_key: item.nextActionKey,
+          advice_version: item.adviceVersion,
+          coach_text: item.coachText,
           reference_audio_standard_url: item.referenceAudioStandardUrl,
           reference_audio_slow_url: item.referenceAudioSlowUrl,
           reference_audio_version: item.referenceAudioVersion,
@@ -780,6 +819,14 @@ function fakeRepository(options = {}) {
       };
       enrollment ??= { trial_status: "not_started", completed_program_days: 0, day_7_report_status: "not_started" };
       return { session_id: SESSION, replayed: false };
+    },
+    async createValidationDailySession(command){
+      calls.validationSessions.push(command);
+      const result=await this.createDailySession(command);
+      activeSession.validation_only=true;
+      activeSession.trial_program_day=null;
+      activeSession.validation_installation_sha256=command.p_installation_sha256;
+      return {...result,validation_only:true};
     },
     async refreshReviewSlot(command) {
       calls.reviewRefreshes.push(command);
@@ -811,7 +858,8 @@ function fakeRepository(options = {}) {
         session_item_id: command.p_session_item_id,
         deletion_epoch: command.p_deletion_epoch,
         capture_expires_at: "2026-08-09T00:02:00.000Z",
-        submission_expires_at: "2026-08-10T00:00:00.000Z"
+        submission_expires_at: "2026-08-10T00:00:00.000Z",
+        status: "issued"
       };
     },
     async recoverAssessmentTicket(command) {
