@@ -1,7 +1,7 @@
 # Phase 13 新MVP準備状況
 
 > 文書状態: 現役の状態記録
-> 最終棚卸し: 2026-08-12（S6-08.1 Hosted適用後／S6-08.2・Stage 7.1実機前補修はlocal／clone検証済み、Hosted承認待ち）
+> 最終棚卸し: 2026-08-13（S6-08.2 Hosted適用・前後照合後／Stage 7.1実機受入待ち）
 > 注意: 旧MVPの確認結果と、新MVPの準備状況を混同しない。
 
 ## 1. 状態ラベル
@@ -19,9 +19,9 @@
 | 項目 | 状態 | 根拠 |
 | --- | --- | --- |
 | 新製品方針の文書化 | 確認済み | マスター、仕様01〜10、Phase 13を新方針へ改訂 |
-| コード・DBの新仕様適合 | 一部確認済み | Core/API v2とS6-08.1 Hosted schema、隔離されたvalidation-only教材1行は適用・照合済み。Stage 7.1は実機証拠がないため完成扱いしない |
+| コード・DBの新仕様適合 | 一部確認済み | Core/API v2とS6-08.2 Hosted schema、隔離されたvalidation-only教材1行は適用・照合済み。Stage 7.1は実機証拠がないため完成扱いしない |
 | Todoist運用 | 一部確認済み | 現行Project概要とopen taskを開始時に再確認し、検証済みwork logだけを通常ルールで記録する。task作成・変更・完了は別権限 |
-| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08.1まで適用・照合済み。validation tester accessは0件、v2 modeは`off`で、実データ削除RPCは未実行 |
+| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08.2まで適用・照合済み。validation tester accessは0件、v2学習は未有効で、実データ削除RPCは未実行 |
 | 実機Azure | 未確認 | 有料API・実機操作を行っていない |
 | RevenueCat sandbox | 未確認 | 外部課金操作を行っていない |
 

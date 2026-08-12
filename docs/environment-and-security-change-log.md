@@ -511,14 +511,15 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 
 - **分類**：ローカルforward migration、API／Mobile契約、独立staging clone rehearsal
 - **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、専用Fresh local Supabase、S6-08.1 staging相当volumeの独立clone、npm workspace
-- **実施日時・最終確認日**：2026-08-12
+- **実施日時・最終確認日**：2026-08-13
 - **実施者**：ユーザー承認のもとCodex
-- **実施状況**：local実装、Fresh migration／Seed／RLS／RPC、DB lint、staging clone upgrade rehearsal、Core／API／Mobile自動検証まで完了。Hosted migration、validation tester access、Preview環境保存、EAS Development Build、Azure実機fixture、iPhone受入は未実施。
+- **実施状況**：local実装、Fresh migration／Seed／RLS／RPC、DB lint、staging clone upgrade rehearsal、Core／API／Mobile自動検証に加え、確定hashのHosted migration適用と前後照合まで完了。validation tester access、Preview環境保存、EAS Development Build、Azure実機fixture、iPhone受入は未実施。
 - **DB補修**：新しいforward-only migrationでticket発行・回復・取消、録音開始／provider結果受信／送信時刻、coach／reference audio snapshot、review receipt、validation session作成・完了、service-role専用RPCを補修した。attemptとdeleteの逆順lockで検出したdeadlockは、全mutation wrapperがuser lockを最初に取得するよう修正した。既存適用済みmigrationは編集していない。
 - **Fresh検証**：全migrationとSeed、既存／新SQL 13件、新validation E2E、DB lintを実行した。加えて、local GoTrue認証から実PostgREST RPCへ接続するAPI統合試験で3 userのvalidation sessionを作成し、必須15 attempt、任意0／1／2の計3 attempt、ticket回復／取消、validation completion、trial非消費を確認した。attempt先行では保存後に同transaction境界でdeleteされ、delete先行では旧epoch attemptが拒否されること、同一delete並行再送でepochが1回だけ増えること、古いdelete request再送でcanonical epochが減らないことを独立接続で確認した。
 - **Upgrade rehearsal**：read-only source volume `supabase_db_oto-s6081-upgrade-r2-20260812`から最終確認用の独立volume `supabase_db_oto-s6082-final-20260812`（port `60632`、volume約125.7MB）へ複製した。確定migration 1件だけをledgerと同じtransactionで適用し、Auth 25件、既存public 39 tableの全exact件数、policy 65件とdigest `ea8e6179c5e5cf3fd2b1d1156be57d3c`が前後一致した。新E2Eも成功した。先行rehearsal用`supabase_db_oto-s6082-upgrade-20260812`も削除せず保持する。
 - **保持中resource**：Fresh local Supabase container／volume、最終copy container `oto-s6082-final-volume-copy-20260812`、最終clone container `supabase_db_oto-s6082-final-20260812`と各volumeを停止状態で保持する。先行rehearsal資源と既存S6-01〜S6-08.1資源、backup、image、IPA、SQL Editor queryは削除していない。
-- **接続・外部境界**：Hosted `otokagami-staging`、旧`Otokagami`、Vercel環境変数、EAS、Azure、TestFlight、App Store、RevenueCatを変更していない。Production code／env deploymentとPR mergeも行っていない。v2 modeは`off`のままである。
+- **Hosted適用・照合**：`20260813000000_harden_v2_validation_e2e.sql`（SHA-256 `6ae3d5ee905e767f06b23b3218bcfaaf0b66be343f60af2674fc7e0bb3f58c0a`）だけを`otokagami-staging`へ単一transactionで適用した。Auth 23件、既存public 39 tableの全exact件数、policy 65件とdigest `bc4cf4cc0ceb92f5e86f0bb8674dd33b`は前後一致した。追加8列、6 constraint、8 functionを確認し、対象functionはservice roleだけが実行可能、validation access／session／ticket／attemptは0件である。
+- **接続・外部境界**：稼働中`otokagami-staging` DB schemaには承認済み変更がある。旧`Otokagami`、Vercel code／環境変数、EAS、Azure、TestFlight、App Store、RevenueCat、PR mergeは変更していない。Production API healthは成功し、Production codeには`/api/v2`が未配布で404のためv2学習は未有効である。
 - **想定されるリスク**：full Xcodeが端末にないためnative compile未実行。tester access、Preview E2E、Development Build、実SQLite／file protection／backup除外、マイク／background／network、Azure projection、human UX受入は未確認であり、Stage 7.1は完成扱いしない。
 - **リスクレベル**：中
 - **状態確認方法**：migration SHA-256、Fresh／clone SQL test、DB lint、Core／API／Mobile test／lint／build、`docker ps -a`、`docker volume ls`、Git diff、後続のPreview／EAS／Azure／実機証拠を確認する。
@@ -540,7 +541,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 11. **ESC-016**：S6-07 hardeningはlocal／staging clone検証と承認済みHosted適用まで完了し、v2 code／learningは未配布・未有効。provider attestation、製品policy、active教材は未実装・未設定。停止container 12件、volume 3件とColima 40GiB disk上限を保持し、削除・縮小は別承認とする。
 12. **ESC-017**：S6-07.1／S6-08はlocal／staging cloneで検証済みで、承認済みS6-08 Hosted schemaも適用・照合済み。Stage 7は実機Azure fixture、実機Mobile受入、v2 live設定が未完了であり、fixture・自動検証だけで完成扱いしない。停止container 12件、volume 4件、一時ディレクトリの削除は別承認とする。
 13. **ESC-018**：S6-08.1／Stage 7.1のlocal補修、validation-only教材、Fresh／clone検証、承認済みHosted schemaと教材1行の適用・照合は完了。tester accessは0件、v2 modeは`off`で、Preview環境、EAS、Azure、iPhone実機証拠は未実施。停止container／volumeの削除は別承認とする。
-14. **ESC-019**：S6-08.2のticket／review／validation E2E補修はFresh／cloneで検証済みだがHosted未適用。Preview、EAS、Azure、iPhone実機受入も未実施であり、停止container／volumeの削除は別承認とする。
+14. **ESC-019**：S6-08.2のticket／review／validation E2E補修はFresh／clone検証と承認済みHosted適用・前後照合まで完了。Preview、EAS、Azure、iPhone実機受入は未実施であり、停止container／volumeの削除は別承認とする。
 
 ### 調査範囲と制限
 
@@ -571,3 +572,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-12 | ESC-018 | Codex | S6-08.1／Stage 7.1のticket/review/delete/epoch、validation-only教材、Mobile SQLite/outbox/audioを補修。最終Fresh migration・Seed・SQL 12件・DB lint・attempt/delete両lock順と独立clone upgradeを完了し、Auth 25件、既存38 table件数、65 policy digestの不変を確認。Hosted・Preview環境・EAS・Azure・実機受入は未実施。 |
 | 2026-08-12 | ESC-018 | Codex | 直前承認後、確定hashのS6-08.1 migration 1件とvalidation-only教材1行だけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存38 table全exact件数、policy 65件/digest不変、tester access 0件、validation session 0件、保護RPCのclient実行0件を確認。実ユーザーデータ削除、v2有効化、Production code/env配信、旧project操作は未実施。 |
 | 2026-08-12 | ESC-019 | Codex | S6-08.2 forward migrationとAPI／Mobile補修を実装。Fresh migration／Seed／SQL／DB lint、attempt-delete両lock順、stale delete replay、独立staging clone upgradeを確認し、Auth 25件・既存39 table exact件数・65 policy digestが不変だった。Hosted／Preview env／EAS／Azure／実機受入は未実施。 |
+| 2026-08-13 | ESC-019 | Codex | 直前承認後、確定hashのS6-08.2 migration 1件だけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存39 table全exact件数、policy 65件/digest不変、追加8列・6 constraint・8 service-only function、validation row 0件を確認。Production code/env配信、v2有効化、実ユーザーデータDML、旧project操作は未実施。 |
