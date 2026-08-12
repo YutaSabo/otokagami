@@ -199,6 +199,8 @@ v2はserver-onlyの`off`／`read_only`／`learning` gateを持ち、未設定時
 
 development validation APIは`VERCEL_ENV=preview`、server-only flag、exact release ID、Development client、許可tester/installationの全条件をserver側で検証する。Productionでは一部設定が誤っていてもfail closedとし、Production contentとvalidation contentの相互fallbackを禁止する。
 
+assessment ticketはclient生成の`ticket_request_id`と保護されたnonceのdigestでsession/item/content/epochへ固定し、発行応答消失後のrecoverと録音取消時のcancelを冪等に扱う。attemptのcanonical hashにはticket、nonce binding、deletion epoch、item、client attempt ID、normalizer version、recording started／provider result receivedの正規化UTC時刻を含める。APIはDB errorをretryableとpermanentへ分類し、全件を一律502へ変換しない。
+
 ## 15. TBD
 
 - レート制限値

@@ -283,3 +283,5 @@ Azureや有料APIの実接続は、費用と対象環境の明示承認後に行
 App Store申請、一般公開、Productionデプロイは技術的完成の外であり、別承認とする。
 
 S6-08.1／Stage 7.1については、local補修とfixture testだけを`COMPLETE`または`code-complete`と呼ばない。Hosted承認済みmigration、validation-only隔離、branch Preview E2E、EAS Development Build、実Azure projection、microphone/network/background/SQLite/audio/file protectionの実機証拠を個別に区別して記録する。
+
+S6-08.2では、Fresh localとstaging復元の独立cloneの両方で、必須5＋任意2、review代替枠、静的coach／reference audio snapshot、ticket回復・取消、review receipt、stale delete replay、attempt/deleteの両lock順、client RPC拒否を検証する。さらにlocal GoTrue認証と実PostgREST RPCを通すAPI統合試験で、任意0／1／2のvalidation completionとtrial非消費を確認する。Hosted適用、Preview、EAS、Azure、実機はそれぞれ別の証拠と承認を必要とする。

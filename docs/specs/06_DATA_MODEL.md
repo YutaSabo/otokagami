@@ -301,6 +301,8 @@ S6-08では、user単位lock、deletion request ID、deletion epoch増加、v1/v
 
 `otokagami-staging`にはS6-08.1までのadditive v2 schemaと、隔離されたvalidation-only教材1行が承認済み適用・前後照合済みで、tester accessは0件、v2 modeは`off`である。atomic export/deleteとlifecycle hardeningの定義はHostedへ存在するが、Hosted実ユーザーへのdelete RPCは実行していない。後続DMLや環境変更は確定内容の個別承認を必要とする。旧v1/legacy行はbackfillせず保持し、旧`Otokagami` projectは凍結する。
 
+S6-08.2のforward-only補修は、ticket requestの回復・取消、録音開始／provider結果／送信時刻、validation itemのcoach／reference audio snapshot、review receipt、validation session隔離、attempt/delete共通user lockを扱う。Fresh localと独立staging cloneで検証済みだが、Hosted適用前の個別承認待ちである。
+
 validation-only教材または結果を同じstaging DBへ置く場合は、公開contentとは別channel・固定release ID・tester/installation制限を持たせ、trial、durable evidence、正式reportへ混入しないことをDB/API両境界で検証する。現在は承認済み教材行1件だけが存在し、tester accessは0件である。追加の教材・access行や結果DMLは、件数・stable ID・内容・無効化方法を確定した別承認まで実行しない。
 
 ## 17. TBD
