@@ -6,4 +6,5 @@ export * from "./hash.js";
 export * from "./normalizer.js";
 export * from "./planner.js";
 export * from "./reviews.js";
+export * from "./session-contract.js";
 export * from "./types.js";

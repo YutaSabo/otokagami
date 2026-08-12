@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readJsonLimited } from "../lib/http.mjs";
+import { ApiError, fail, readJsonLimited } from "../lib/http.mjs";
+
+test("API errors expose an explicit retryable or permanent disposition", async () => {
+  const retryable = await fail(new ApiError("UPSTREAM_UNAVAILABLE", "retry", 502, true)).json();
+  const permanent = await fail(new ApiError("PAYLOAD_CONFLICT", "stop", 409, false)).json();
+  assert.equal(retryable.error.disposition, "retryable");
+  assert.equal(permanent.error.disposition, "permanent");
+});
 
 test("limited JSON reader rejects a chunked body before reading the full stream", async () => {
   let pulls = 0;

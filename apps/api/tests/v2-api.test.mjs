@@ -7,6 +7,7 @@ import {
   projectAzureFocusPayload
 } from "@pronunciation-mirror/core/v2";
 import { ApiError } from "../lib/http.mjs";
+import { createValidationContentRepository } from "../lib/validation-content.mjs";
 import {
   createEmptyV2ContentRepository,
   createV2Repository,
@@ -28,6 +29,7 @@ const CONTENT = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const CLIENT_ATTEMPT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const COMPLETION = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const TICKET = "12121212-1212-4212-8212-121212121212";
+const TICKET_REQUEST = "23232323-2323-4232-8232-232323232323";
 const TICKET_NONCE = "34343434-3434-4434-8434-343434343434";
 const REVIEW_SCHEDULE = "45454545-4545-4545-8545-454545454545";
 const REVIEW_ATTEMPT = "46464646-4646-4646-8646-464646464646";
@@ -224,12 +226,20 @@ test("daily session is server planned from reviewed fixtures and never falls bac
   assert.equal(result.session.items.length, 5);
   assert.deepEqual(repository.calls.createdItems.map((item) => item.slotRole), ["anchor", "contrast", "transfer_word", "sentence", "review"]);
   assert.equal(repository.calls.createdItems.some((item) => item.referenceText.includes("free")), false);
+  assert.deepEqual(result.session.items[0].referenceAudio, {
+    standardUrl: "/validation-audio/test-0-standard.wav",
+    slowUrl: "/validation-audio/test-0-slow.wav",
+    version: "fixture-v1",
+    manifestSha256: "a".repeat(64)
+  });
+  assert.equal(result.session.requiredItemCount, 5);
+  assert.equal(result.session.optionalItemCount, 0);
 });
 
 test("speech token accepts only an owned managed item and fixes reference text and en-US on the server", async () => {
   const repository = fakeRepository({ activeSession: sessionFixture() });
   const result = await v2SpeechToken({
-    request: requestFor("speech-token", { session_item_id: ITEM }),
+    request: requestFor("speech-token", speechTokenBody()),
     env: ENV,
     repository,
     now: new Date("2026-08-09T00:00:00Z")
@@ -240,9 +250,10 @@ test("speech token accepts only an owned managed item and fixes reference text a
   assert.equal(result.provider_projection_max_bytes, 32768);
   assert.equal(result.contract_version, "2026-08-s6-08-stage-7");
   assert.match(result.assessment_ticket.id, /^[0-9a-f-]{36}$/);
-  assert.match(result.assessment_ticket.nonce, /^[0-9a-f-]{36}$/);
+  assert.equal("nonce" in result.assessment_ticket, false);
+  assert.equal(result.assessment_ticket.request_id, TICKET_REQUEST);
   const arbitrary = await v2SpeechToken({
-    request: requestFor("speech-token", { session_item_id: ITEM, text: "client text" }),
+    request: requestFor("speech-token", { ...speechTokenBody(), text: "client text" }),
     env: ENV,
     repository
   }).catch((error) => error);
@@ -253,7 +264,7 @@ test("speech token checks ticket eligibility before Azure and abandons its reser
   let azureCalls = 0;
   const ineligible = fakeRepository({ activeSession: sessionFixture(), ticketIssueError: "VALID_ATTEMPT_LIMIT_REACHED" });
   const blocked = await v2SpeechToken({
-    request: requestFor("speech-token", { session_item_id: ITEM }),
+    request: requestFor("speech-token", speechTokenBody()),
     env: { ...ENV, AZURE_ASSESSMENT_MODE: "auto" },
     repository: ineligible,
     fetchImpl: async () => { azureCalls += 1; throw new Error("must not run"); }
@@ -263,7 +274,7 @@ test("speech token checks ticket eligibility before Azure and abandons its reser
 
   const reserved = fakeRepository({ activeSession: sessionFixture() });
   const unavailable = await v2SpeechToken({
-    request: requestFor("speech-token", { session_item_id: ITEM }),
+    request: requestFor("speech-token", speechTokenBody()),
     env: { ...ENV, AZURE_ASSESSMENT_MODE: "auto" },
     repository: reserved,
     fetchImpl: async () => { azureCalls += 1; throw new Error("network"); }
@@ -271,6 +282,67 @@ test("speech token checks ticket eligibility before Azure and abandons its reser
   assert.equal(unavailable.code, "AZURE_TOKEN_UNAVAILABLE");
   assert.equal(azureCalls, 1);
   assert.equal(reserved.calls.abandonedTickets.length, 1);
+});
+
+test("speech ticket request can be recovered or cancelled only with the same request id and nonce", async () => {
+  const repository = fakeRepository({ activeSession: sessionFixture() });
+  const recovered = await v2SpeechToken({
+    request: requestFor("speech-token", speechTokenBody({ operation: "recover", session_item_id: undefined })),
+    env: ENV,
+    repository
+  });
+  assert.equal(recovered.recovered, true);
+  assert.equal(recovered.assessment_ticket.request_id, TICKET_REQUEST);
+  assert.equal(recovered.token, "mock-speech-token");
+  const cancelled = await v2SpeechToken({
+    request: requestFor("speech-token", speechTokenBody({ operation: "cancel", session_item_id: undefined })),
+    env: { ...ENV, AZURE_SPEECH_KEY: "", AZURE_SPEECH_REGION: "" },
+    repository
+  });
+  assert.equal(cancelled.cancelled, true);
+  assert.equal(repository.calls.recoveredTickets.length, 1);
+  assert.equal(repository.calls.abandonedTickets.length, 1);
+});
+
+test("validation content requires non-production environment, explicit tester and ready immutable manifest", async () => {
+  const config = {
+    v2ValidationContentEnabled: true,
+    v2ValidationTesterUserIds: new Set([USER]),
+    v2ValidationInstallationIds: new Set(["installation-a"]),
+    v2ValidationDevelopmentClientMarker: "development-client",
+    v2ValidationContentVersionId: CONTENT,
+    deploymentEnvironment: "preview"
+  };
+  const hash = "a".repeat(64);
+  const variant = (name) => ({ url: `/validation-audio/r-l/${name}.wav`, sha256: hash });
+  const manifest = {
+    status: "ready",
+    contentVersionId:CONTENT,stableReleaseId:"development-validation-r-l",version:1,focusGroupKey:"r-l",
+    audioVersion: "validation-v1",
+    manifestSha256: hash,
+    assets: [
+      { key: "light", standard: variant("light-standard"), slow: variant("light-slow") },
+      { key: "right", standard: variant("right-standard"), slow: variant("right-slow") },
+      { key: "read", standard: variant("read-standard"), slow: variant("read-slow") }
+    ]
+  };
+  const repository = createValidationContentRepository({
+    config, userId: USER, installationId: "installation-a",
+    developmentClientMarker: "development-client", manifest
+  });
+  assert.equal((await repository.listContentCandidates()).length, 7);
+  assert.throws(() => createValidationContentRepository({
+    config: { ...config, deploymentEnvironment: "production" }, userId: USER,
+    installationId: "installation-a", developmentClientMarker: "development-client", manifest
+  }), /FORBIDDEN_IN_PRODUCTION/);
+  assert.throws(() => createValidationContentRepository({
+    config: { ...config, v2ValidationTesterUserIds: new Set() }, userId: USER,
+    installationId: "installation-a", developmentClientMarker: "development-client", manifest
+  }), /TESTER_NOT_ALLOWED/);
+  assert.throws(() => createValidationContentRepository({
+    config, userId: USER, installationId: "installation-b",
+    developmentClientMarker: "development-client", manifest
+  }), /TESTER_NOT_ALLOWED/);
 });
 
 test("live v2 assessment fails closed when verified payload, expiry or outbox policy is absent", async () => {
@@ -284,7 +356,7 @@ test("live v2 assessment fails closed when verified payload, expiry or outbox po
     const env = { ...ENV };
     delete env[missing];
     const error = await v2SpeechToken({
-      request: requestFor("speech-token", { session_item_id: ITEM }),
+      request: requestFor("speech-token", speechTokenBody()),
       env,
       repository: fakeRepository({ activeSession: sessionFixture() })
     }).catch((caught) => caught);
@@ -321,9 +393,23 @@ test("attempt command normalizes on the server and persists no raw provider, aud
   assert.equal(result.result.observedCandidate, "s");
   const persisted = repository.calls.attempts[0];
   const serialized = JSON.stringify(persisted);
-  assert.doesNotMatch(serialized, /provider_result|NBest|audio|file_uri|authorization|azure-server-key/);
+  assert.doesNotMatch(serialized, /provider_payload|provider_projection|NBest|audio_base64|file_uri|authorization|azure-server-key/);
   assert.equal(persisted.p_assessment_locale, "en-US");
   assert.match(persisted.p_payload_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(persisted.p_ticket_request_id, TICKET_REQUEST);
+  assert.equal(persisted.p_recording_started_at, "2026-08-09T00:00:00.000Z");
+});
+
+test("attempt canonical hash includes capture chronology", async () => {
+  const first = fakeRepository({ activeSession: sessionFixture() });
+  const second = fakeRepository({ activeSession: sessionFixture() });
+  await v2PersistAttempt({ request: requestFor("attempts", attemptBody()), env: ENV, repository: first });
+  await v2PersistAttempt({
+    request: requestFor("attempts", { ...attemptBody(), captured_at: "2026-08-09T00:00:02.000Z" }),
+    env: ENV,
+    repository: second
+  });
+  assert.notEqual(first.calls.attempts[0].p_payload_sha256, second.calls.attempts[0].p_payload_sha256);
 });
 
 test("attempt replay is idempotent, changed canonical payload conflicts, invalid does not consume valid ordinal and fourth valid is rejected", async () => {
@@ -420,6 +506,27 @@ test("session completion sends only server-derived date, hash and idempotency in
   assert.equal(repository.calls.completions[1].p_completion_payload_sha256, repository.calls.completions[0].p_completion_payload_sha256);
 });
 
+test("validation session completion uses the isolated receipt and never sends entitlement metadata", async () => {
+  const session = { ...sessionFixture(), validation_only: true };
+  const repository = fakeRepository({ activeSession: session });
+  await v2CompleteSession({
+    request: requestFor("session-completion", { session_id: SESSION, completion_idempotency_key: COMPLETION },true,{
+      "x-otokagami-installation-id":"installation-a","x-otokagami-development-client":"development-client"
+    }),
+    env: { ...ENV,VERCEL_ENV:"preview",OTOKAGAMI_V2_VALIDATION_CONTENT_ENABLED:"true",
+      OTOKAGAMI_V2_VALIDATION_TESTER_USER_IDS:USER,OTOKAGAMI_V2_VALIDATION_INSTALLATION_IDS:"installation-a",
+      OTOKAGAMI_V2_VALIDATION_DEVELOPMENT_CLIENT_MARKER:"development-client",
+      OTOKAGAMI_V2_VALIDATION_CONTENT_VERSION_ID:CONTENT },
+    repository,
+    now: new Date("2026-08-09T03:00:00Z")
+  });
+  assert.equal(repository.calls.completions.length, 0);
+  assert.deepEqual(Object.keys(repository.calls.validationCompletions[0]).sort(), [
+    "p_calendar_date", "p_completed_at", "p_completion_idempotency_key",
+    "p_completion_payload_sha256", "p_session_id", "p_user_id"
+  ]);
+});
+
 test("review completion is bound to the owned review snapshot and server-derived calendar date", async () => {
   const session = sessionFixture();
   session.items[0] = {
@@ -469,7 +576,7 @@ test("v2 export and delete use authenticated ownership, redact service inputs an
   assert.deepEqual(Object.keys(repository.calls.exports[0]).sort(), ["p_max_bytes", "p_server_now", "p_user_id"]);
 
   const deletionRequestId = "56565656-5656-4656-8656-565656565656";
-  await assert.rejects(() => v2DeleteLearningData({
+  const readOnlyDeleted = await v2DeleteLearningData({
     request: requestFor("delete-learning-data", {
       confirm: true,
       deletion_request_id: deletionRequestId,
@@ -478,7 +585,8 @@ test("v2 export and delete use authenticated ownership, redact service inputs an
     env: { ...ENV, OTOKAGAMI_V2_MODE: "read_only" },
     repository,
     now: new Date("2026-08-09T04:00:00Z")
-  }), (error) => error.code === "V2_READ_ONLY");
+  });
+  assert.equal(readOnlyDeleted.deletion_epoch, 5);
 
   const deleted = await v2DeleteLearningData({
     request: requestFor("delete-learning-data", {
@@ -500,11 +608,11 @@ test("v2 export and delete use authenticated ownership, redact service inputs an
   assert.doesNotMatch(JSON.stringify({ exported, deleted }), /nonce|payload_hash|authorization|token|audio|file_uri/i);
 });
 
-function requestFor(kind, body = {}, authorized = true) {
+function requestFor(kind, body = {}, authorized = true,extraHeaders = {}) {
   const method = ["access-status", "progress", "reports"].includes(kind) ? "GET" : "POST";
   return new Request(`http://api.test/api/v2/${kind}`, {
     method,
-    headers: { ...(authorized ? { authorization: "Bearer user-token" } : {}), ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+    headers: { ...(authorized ? { authorization: "Bearer user-token" } : {}), ...(method === "POST" ? { "content-type": "application/json" } : {}),...extraHeaders },
     body: method === "POST" ? JSON.stringify(body) : undefined
   });
 }
@@ -514,10 +622,23 @@ function attemptBody() {
     session_item_id: ITEM,
     client_attempt_id: CLIENT_ATTEMPT,
     assessment_ticket_id: TICKET,
+    ticket_request_id: TICKET_REQUEST,
     assessment_ticket_nonce: TICKET_NONCE,
     deletion_epoch: 0,
+    recording_started_at: "2026-08-09T00:00:00.000Z",
     captured_at: "2026-08-09T00:00:01.000Z",
+    provider_result_received_at: "2026-08-09T00:00:02.000Z",
     provider_projection: AZURE_V2_PROJECTION
+  };
+}
+
+function speechTokenBody(overrides = {}) {
+  return {
+    operation: "issue",
+    ticket_request_id: TICKET_REQUEST,
+    assessment_ticket_nonce: TICKET_NONCE,
+    session_item_id: ITEM,
+    ...overrides
   };
 }
 
@@ -593,7 +714,13 @@ function contentRepositoryFixture() {
     referenceTextVersion: "text-v1",
     expectedFocusRepresentation: "θ",
     targetLocator: { wordIndex: 0, phonemeIndex: 0 },
-    nextActionKey: "tongue_forward"
+    nextActionKey: "tongue_forward",
+    referenceAudio: {
+      standardUrl: `/validation-audio/test-${index}-standard.wav`,
+      slowUrl: `/validation-audio/test-${index}-slow.wav`,
+      version: "fixture-v1",
+      manifestSha256: "a".repeat(64)
+    }
   }));
   return {
     async listFocusCandidates() { return [{ id: "focus", focusGroupKey: "theta-s-t", kind: "discovery", reproducible: true, active: true, humanReviewed: true, azureValidated: true }]; },
@@ -607,7 +734,7 @@ function fakeRepository(options = {}) {
   let activeSession = options.activeSession ?? null;
   const attempts = new Map();
   let validCount = 0;
-  const calls = { attempts: [], completions: [], reviewCompletions: [], createdItems: [], reviewRefreshes: [] };
+  const calls = { attempts: [], completions: [], validationCompletions: [], reviewCompletions: [], createdItems: [], reviewRefreshes: [] };
   return {
     calls,
     async authenticate(token) {
@@ -644,7 +771,11 @@ function fakeRepository(options = {}) {
           reference_text_version: item.referenceTextVersion,
           expected_focus_representation: item.expectedFocusRepresentation,
           target_locator: item.targetLocator,
-          next_action_key: item.nextActionKey
+          next_action_key: item.nextActionKey,
+          reference_audio_standard_url: item.referenceAudioStandardUrl,
+          reference_audio_slow_url: item.referenceAudioSlowUrl,
+          reference_audio_version: item.referenceAudioVersion,
+          reference_audio_manifest_sha256: item.referenceAudioManifestSha256
         }))
       };
       enrollment ??= { trial_status: "not_started", completed_program_days: 0, day_7_report_status: "not_started" };
@@ -676,14 +807,22 @@ function fakeRepository(options = {}) {
       calls.tickets.push(command);
       return {
         ticket_id: TICKET,
+        ticket_request_id: command.p_ticket_request_id,
+        session_item_id: command.p_session_item_id,
+        deletion_epoch: command.p_deletion_epoch,
         capture_expires_at: "2026-08-09T00:02:00.000Z",
         submission_expires_at: "2026-08-10T00:00:00.000Z"
       };
     },
-    async abandonAssessmentTicket(command) {
+    async recoverAssessmentTicket(command) {
+      calls.recoveredTickets ??= [];
+      calls.recoveredTickets.push(command);
+      return { ticket_id: TICKET, ticket_request_id: command.p_ticket_request_id, session_item_id: ITEM, deletion_epoch: 0, status:"issued", capture_expires_at: "2026-08-09T00:02:00.000Z", submission_expires_at: "2026-08-10T00:00:00.000Z", recovered: true };
+    },
+    async cancelAssessmentTicket(command) {
       calls.abandonedTickets ??= [];
       calls.abandonedTickets.push(command);
-      return { abandoned: true };
+      return { ticket_id: TICKET, ticket_request_id: command.p_ticket_request_id, cancelled: true };
     },
     async persistAttempt(command) {
       calls.attempts.push(command);
@@ -702,6 +841,10 @@ function fakeRepository(options = {}) {
       return result;
     },
     async completeSession(command) { calls.completions.push(command); return { session_id: SESSION, replayed: false }; },
+    async completeValidationSession(command) {
+      calls.validationCompletions.push(command);
+      return { session_id: SESSION, replayed: false, validation_only: true };
+    },
     async completeReview(command) {
       calls.reviewCompletions.push(command);
       return { review_schedule_id: command.p_review_schedule_id, replayed: false };

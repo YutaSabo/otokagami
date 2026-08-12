@@ -195,6 +195,10 @@ RevenueCat webhookは認証し、再送に耐える。商品ID、Offering、Pack
 
 v2はserver-onlyの`off`／`read_only`／`learning` gateを持ち、未設定時は`off`である。v1 route、table、行、Python/OpenAI/Piper serviceは互換期間中保持するが、新MVP中心経路から呼ばない。
 
+`read_only`では、認証済み本人の過去閲覧、export、learning-data deleteをlearning権限と分離して扱う。trial期限切れ・未購読を理由にdata rightsを拒否しない。学習write、speech token、attempt、session completionは引き続き拒否する。global `off`時のv2 data-rights契約はv1権利経路との整合を確認するまで未確定であり、クライアントでsilent no-opにしない。
+
+development validation APIは`VERCEL_ENV=preview`、server-only flag、exact release ID、Development client、許可tester/installationの全条件をserver側で検証する。Productionでは一部設定が誤っていてもfail closedとし、Production contentとvalidation contentの相互fallbackを禁止する。
+
 ## 15. TBD
 
 - レート制限値

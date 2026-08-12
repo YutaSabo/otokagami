@@ -183,6 +183,8 @@ S6-08／Stage 7時点の保存境界は、Application SupportのSQLite outboxと
 - Production、Hosted DB変更、外部環境変更は個別承認が必要。
 - App Store申請・一般公開は今回のアプリ完成範囲外。
 
+開発専用validation経路は、Production教材を待たず実機統合を確認するための隔離経路である。Vercel branch Preview、Development client、server-only validation flag、exact validation release ID、tester/installation allowlistを同時に要求し、Production環境ではfail closedにする。validation教材を公開active教材やStage 9完成数へ含めず、公開経路とのfallbackも行わない。
+
 ## 13. 再利用候補
 
 - iOS Azure Speech SDKモジュールとPCM直接stream
@@ -209,9 +211,9 @@ S6-08／Stage 7時点の保存境界は、Application SupportのSQLite outboxと
 
 ## 15. 未確認
 
-- Hosted Supabaseのスキーマ・Seed
+- Hosted SupabaseのS6-08.1補修schemaとvalidation-only教材1行は承認済み適用・照合済み。tester access追加、Preview接続、v2 mode変更は未実施
 - 実機Azureレイテンシと焦点群別安定性
 - RevenueCat sandbox商品・復元・webhook
-- Vercel/Fly.io/Expo/App Store Connectの現在状態
+- S6-08.1／Stage 7.1 branch Preview、EAS Development Build、実機native storageの現在状態
 - static contentの最終配信方式
 - 保存方式と正式SLO

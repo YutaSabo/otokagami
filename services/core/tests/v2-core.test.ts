@@ -5,6 +5,7 @@ import {
   addCalendarDays,
   calendarDateFromInstant,
   canonicalPayloadSha256,
+  assertDailyPlanContract,
   createDailyPlan,
   createReviewScheduleCandidates,
   deriveFocusState,
@@ -23,6 +24,7 @@ import {
   selectCountedAttempts,
   selectDueReview,
   selectDurableEvidenceCandidates,
+  selectFocusCandidate,
   type CompletionItem,
   type ContentCandidate,
   type CorrectionCycle,
@@ -49,6 +51,29 @@ test("date-only addition handles month, year and leap boundaries", () => {
   assert.equal(addCalendarDays("2026-03-01", -1), "2026-02-28");
   assert.throws(() => addCalendarDays("2026-02-30", 1), RangeError);
   assert.throws(() => addCalendarDays("2026-01-01", 0.5), RangeError);
+});
+
+test("daily plan contract fixes five required roles and at most two optional extensions", () => {
+  const plan = mustPlan();
+  assert.doesNotThrow(() => assertDailyPlanContract(plan));
+  assert.throws(
+    () => assertDailyPlanContract({ ...plan, requiredItems: plan.requiredItems.slice(0, 3) }),
+    /exactly five required/
+  );
+  assert.throws(
+    () => assertDailyPlanContract({
+      ...plan,
+      optionalItems: [{ ...plan.requiredItems[0], position: 6, required: false, slotRole: "anchor" }]
+    }),
+    /required\/optional item contract/
+  );
+});
+
+test("development validation content requires an explicit planner boundary", () => {
+  const focus = [{ id: "validation", focusGroupKey: "r-l", kind: "unevaluated" as const,
+    active: false, humanReviewed: false, azureValidated: false, developmentValidation: true }];
+  assert.equal(selectFocusCandidate(focus), undefined);
+  assert.equal(selectFocusCandidate(focus, { allowDevelopmentValidation: true })?.id, "validation");
 });
 
 test("Calendar Date uses explicit IANA timezone across DST and day boundaries", () => {

@@ -14,29 +14,43 @@ export function classifyV2OutboxError(error) {
   return "permanent_failure";
 }
 
-export function createV2ApiClient({ baseUrl, getAccessToken, fetchImpl = fetch }) {
+export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,validationHeaders={},requestTimeoutMs }) {
   if (!isHttpUrl(baseUrl)) throw new TypeError("A valid v2 API base URL is required.");
   if (typeof getAccessToken !== "function") throw new TypeError("getAccessToken is required.");
 
   async function request(path, { method = "GET", body, signal } = {}) {
+    if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs <= 0) {
+      throw new V2ApiError("V2_CLIENT_TIMEOUT_CONFIG_REQUIRED","通信設定が未確定です。",503,false);
+    }
     const accessToken = await getAccessToken();
     if (typeof accessToken !== "string" || accessToken.length === 0) {
       throw new V2ApiError("UNAUTHORIZED", "認証が必要です。", 401, false);
     }
     let response;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort("timeout"),requestTimeoutMs);
+    const forwardAbort=()=>controller.abort(signal?.reason);
+    signal?.addEventListener?.("abort",forwardAbort,{once:true});
     try {
       response = await fetchImpl(`${baseUrl.replace(/\/$/, "")}${path}`, {
         method,
         headers: {
           Authorization: `Bearer ${accessToken}`,
+          ...validationHeaders,
           ...(body === undefined ? {} : { "Content-Type": "application/json" })
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal
+        signal:controller.signal
       });
     } catch (error) {
+      if (controller.signal.aborted && !signal?.aborted) {
+        throw new V2ApiError("REQUEST_TIMEOUT","通信がタイムアウトしました。",408,true);
+      }
       if (error?.name === "AbortError") throw error;
       throw new V2ApiError("NETWORK_UNAVAILABLE", "通信できませんでした。", 0, true);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener?.("abort",forwardAbort);
     }
     const payload = await response.json().catch(() => null);
     if (!response.ok || payload?.ok !== true || payload.data === undefined) {
@@ -54,9 +68,16 @@ export function createV2ApiClient({ baseUrl, getAccessToken, fetchImpl = fetch }
     bootstrap: () => request("/api/v2/bootstrap", { method: "POST", body: {} }),
     accessStatus: () => request("/api/v2/access-status"),
     dailySession: (timezone) => request("/api/v2/daily-session", { method: "POST", body: { timezone } }),
-    speechToken: (sessionItemId, attemptPurpose) => request("/api/v2/speech-token", {
+    speechToken: (sessionItemId, attemptPurpose, ticketRequestId, assessmentTicketNonce) => request("/api/v2/speech-token", {
       method: "POST",
-      body: { session_item_id: sessionItemId, attempt_purpose: attemptPurpose }
+      body: { operation:"issue",session_item_id: sessionItemId,attempt_purpose: attemptPurpose,
+        ticket_request_id: ticketRequestId,assessment_ticket_nonce:assessmentTicketNonce }
+    }),
+    recoverSpeechToken:(ticketRequestId,assessmentTicketNonce)=>request("/api/v2/speech-token",{
+      method:"POST",body:{operation:"recover",ticket_request_id:ticketRequestId,assessment_ticket_nonce:assessmentTicketNonce}
+    }),
+    cancelSpeechToken:(ticketRequestId,assessmentTicketNonce)=>request("/api/v2/speech-token",{
+      method:"POST",body:{operation:"cancel",ticket_request_id:ticketRequestId,assessment_ticket_nonce:assessmentTicketNonce}
     }),
     persistAttempt: (command) => request("/api/v2/attempts", { method: "POST", body: command }),
     completeReview: (command) => request("/api/v2/review-completion", { method: "POST", body: command }),

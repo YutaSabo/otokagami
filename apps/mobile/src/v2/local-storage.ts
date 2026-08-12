@@ -5,17 +5,20 @@ import ProtectedStorage from "otokagami-protected-storage";
 import { V2_AUDIO_INDEX_SCHEMA } from "../../lib/v2-audio-lifecycle.mjs";
 import { migrateV2DeletionSchema } from "../../lib/v2-deletion.mjs";
 import { migrateV2OutboxSchema } from "../../lib/v2-outbox.mjs";
+import { V2_TICKET_JOURNAL_SCHEMA } from "../../lib/v2-ticket-journal.mjs";
 
-const DATABASE_NAME = "otokagami-v2.sqlite";
 const TICKET_KEY_PREFIX = "otokagami.v2.ticket.";
 
-export async function openV2Database(): Promise<SQLiteDatabase> {
+export async function openV2Database(userId: string): Promise<SQLiteDatabase> {
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) throw new TypeError("A valid user identifier is required.");
+  const databaseName = `otokagami-v2-${userId.toLowerCase()}.sqlite`;
   const prepared = await ProtectedStorage.prepare();
-  const database = await openDatabaseAsync(DATABASE_NAME, {}, prepared.databaseDirectoryUri);
+  const database = await openDatabaseAsync(databaseName, {}, prepared.databaseDirectoryUri);
   await migrateV2DeletionSchema(database);
   await database.execAsync(V2_AUDIO_INDEX_SCHEMA);
   await migrateV2OutboxSchema(database);
-  await ProtectedStorage.protectDatabase(DATABASE_NAME);
+  await database.execAsync(V2_TICKET_JOURNAL_SCHEMA);
+  await ProtectedStorage.protectDatabase(databaseName);
   return database;
 }
 

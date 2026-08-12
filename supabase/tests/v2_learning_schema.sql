@@ -23,8 +23,8 @@ begin
     from information_schema.tables
     where table_schema = 'public'
       and table_type = 'BASE TABLE'
-  ) <> 38 then
-    raise exception 'S6-08 schema failed: expected 36 existing plus review receipt and deletion ledger';
+  ) <> 39 then
+    raise exception 'S6-08.1 schema failed: expected 38 existing plus validation access ledger';
   end if;
 
   foreach new_table_name in array new_tables loop

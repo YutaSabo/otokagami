@@ -4,8 +4,8 @@ do $$
 declare
   function_signature regprocedure;
 begin
-  if (select count(*) from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE') <> 38 then
-    raise exception 'S6-08 runtime hardening must add assessment tickets, review receipts, and deletion ledger';
+  if (select count(*) from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE') <> 39 then
+    raise exception 'S6-08.1 runtime hardening must retain runtime tables and add validation access ledger';
   end if;
   if (select count(*) from pg_policies where schemaname = 'public') <> 65 then
     raise exception 'S6-08 runtime migration policy count mismatch';

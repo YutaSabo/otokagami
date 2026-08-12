@@ -75,11 +75,18 @@ export interface ContentCandidate {
   active: boolean;
   humanReviewed: boolean;
   azureValidated: boolean;
+  developmentValidation?: boolean;
   referenceText?: string;
   referenceTextVersion?: string;
   expectedFocusRepresentation?: string;
   targetLocator?: { wordIndex: number; phonemeIndex: number };
   nextActionKey?: string;
+  referenceAudio?: {
+    standardUrl: string;
+    slowUrl: string;
+    version: string;
+    manifestSha256: string;
+  };
 }
 
 export interface FocusCandidate {
@@ -92,6 +99,7 @@ export interface FocusCandidate {
   active: boolean;
   humanReviewed: boolean;
   azureValidated: boolean;
+  developmentValidation?: boolean;
 }
 
 export interface ReviewScheduleCandidate {

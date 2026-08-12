@@ -239,3 +239,13 @@ Day 7完了後、8回目の学習日となる新規判定を始める前に購�
 - 期限超過復習の優先重み
 
 これらを既存の80点や10点へ自動的に固定しない。
+
+## 14. validation-only学習の境界
+
+実機前の統合確認では、Production教材と完全に分離した少量の`development_validation`教材を使用できる。ただし、その結果は公開教材の完成数、trial消費、durable evidence、focus state、正式レポート、課金権限へ加算しない。
+
+- 通常5つの必須slotと任意追加0〜2件を検証し、任意課題をProgram Day完了条件にしない。
+- policy未確定中は3課題への短縮とfocus state昇格を行わない。
+- provider結果は`server_normalized`であっても`provider_attested=false`とし、真正性証明済みとは扱わない。
+- validation経路はPreview＋Development client＋明示tester制限がすべて成立した場合だけ利用し、Productionや公開教材へfallbackしない。
+- 実機証拠が揃うまで、fixtureや自動テストだけをStage 7完成証拠にしない。

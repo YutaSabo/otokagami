@@ -22,3 +22,12 @@ test("SDK 57-compatible SQLite and protected module are declared without identit
   assert.equal(config.expo.ios.bundleIdentifier, "com.yutahemmi.otokagami");
   assert.equal(config.expo.extra.eas.projectId, "c4f399f5-6039-45d9-aec0-1c72629ec47a");
 });
+
+test("real expo-sqlite API and dev-build diagnostics use supported SDK 57 boundaries",async()=>{
+ const local=await readFile(new URL("../src/v2/local-storage.ts",import.meta.url),"utf8");
+ const diagnostic=await readFile(new URL("../src/v2/dev-build-diagnostics.ts",import.meta.url),"utf8");
+ assert.match(local,/openDatabaseAsync\(databaseName, \{\}, prepared\.databaseDirectoryUri\)/);
+ assert.match(local,/withTransactionAsync|SQLiteDatabase/);
+ assert.match(diagnostic,/ProtectedStorage\.prepare\(\)/);
+ assert.match(diagnostic,/Application Support\|Application%20Support/);
+});

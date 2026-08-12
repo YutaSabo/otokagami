@@ -19,7 +19,7 @@ supabase             local config, migrations, seed, RLS tests
 
 現在のworkspace、パッケージ、iOS識別子、凍結v1コードには旧称`Pronunciation Mirror`が残っています。自由入力、詳細なスコア・進捗、実行時OpenAI助言、Python/Piper TTS等も削除前の互換資産として残るため、既存環境を起動・検証するには以下のセットアップと環境変数が引き続き必要です。
 
-新MVP側は、Core v2、独立した`/api/v2`、additive Supabase schema/RPC/RLS、対象1音中心のMobile shell、SQLite outbox、端末before/after保存、atomic export/deleteまで実装したfixture-based code candidateです。S6-08 schemaは`otokagami-staging`へ適用済みですが、v2 modeは既定`off`で、公開教材、実機Azure/Mobile、課金・公開は未完了です。
+新MVP側には、Core v2、独立した`/api/v2`、additive Supabase schema/RPC/RLS、対象1音中心のMobile shell、SQLite outbox、端末before/after保存、atomic export/deleteの実装候補があります。S6-08.1 schemaと隔離されたvalidation-only教材1行は`otokagami-staging`へ適用・照合済みですが、tester accessは0件、v2 modeは既定`off`です。Preview E2E、Development Build、実機Azure、SQLite/native storage、中心1問UXの実機証拠はまだありません。Stage 7は`COMPLETE`または`code-complete`ではありません。
 
 ### 新MVPの目標
 

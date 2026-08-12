@@ -223,6 +223,8 @@ MVPは管理課題だけを判定する。実行時OpenAI助言、実行時Piper
 
 現在コードに残る旧機能は第3段階では変更しない。MVPアクセス経路からの除外は第4段階以降。
 
+実機前検証用のvalidation-only教材は、公開教材、正式な人間レビュー済み教材、Azure検証済み教材として表示・集計しない。利用はPreview、Development client、exact release ID、許可tester/installationへ限定し、Productionではfail closedにする。音声は端末からAzureへ直接送り、自社API/DB/outboxへ送らない。strict projectionも`provider_attested=false`を維持し、raw Azure payload、token、URI、音声を保存・通常ログ出力しない。
+
 ## 13. セキュリティ受け入れ条件
 
 - ユーザー音声が自社サーバー/DB/Storageへ保存されない。
@@ -240,8 +242,8 @@ MVPは管理課題だけを判定する。実行時OpenAI助言、実行時Piper
 
 - 実価格、商品、Offering、Package
 - RevenueCat sandboxとwebhook実接続
-- Hosted Supabase状態
+- Hosted SupabaseはS6-08.1補修schemaとvalidation-only教材1行まで承認済み適用・照合済み。tester accessは0件でv2 modeは`off`
 - Azure外部データ保持設定
 - 退会・法的保持期間
-- ローカル音声暗号化・バックアップ除外
+- ローカル音声・SQLite/WAL/SHMのfile protectionとbackup除外の実機証拠
 - 端末変更時のtrial復元

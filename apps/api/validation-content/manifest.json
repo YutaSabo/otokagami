@@ -1,0 +1,54 @@
+{
+  "status": "ready",
+  "validationOnly": true,
+  "contentVersionId": "84a11917-7498-40d0-aca4-fb8d096e1f41",
+  "stableReleaseId": "development-validation-r-l",
+  "version": 1,
+  "focusGroupKey": "r-l",
+  "humanAudioReviewed": false,
+  "azureAudioValidated": false,
+  "audioVersion": "development-validation-samantha-en-us-v1",
+  "manifestSha256": "84a11917749840d0aca4fb8d096e1f4126d6f56aeca9d2aa0d7f67a713a3d26c",
+  "generation": {
+    "tool": "macOS say + afconvert",
+    "voice": "Samantha (en_US)",
+    "standardWordsPerMinute": 180,
+    "slowWordsPerMinute": 110,
+    "output": "WAV PCM signed 16-bit mono 16000 Hz"
+  },
+  "assets": [
+    {
+      "key": "light",
+      "standard": {
+        "url": "/validation-audio/r-l/light.standard.wav",
+        "sha256": "6e547a4b8612d0ff24d8fc4e4a00e9d40240386e389be00c136d70c7226b1ceb"
+      },
+      "slow": {
+        "url": "/validation-audio/r-l/light.slow.wav",
+        "sha256": "8f7d1431533b9d5ea7753ffd7b0280de239895403de7ef3356faa788c4c4d21c"
+      }
+    },
+    {
+      "key": "right",
+      "standard": {
+        "url": "/validation-audio/r-l/right.standard.wav",
+        "sha256": "c4c098d2ccc93e30ba2e3009a1db2b0ad7f53101a850ceacecb16135f158a95a"
+      },
+      "slow": {
+        "url": "/validation-audio/r-l/right.slow.wav",
+        "sha256": "eebe2556d95873604b50753743ed771d96362ed84ff5ce6d8a48a7712e5df59a"
+      }
+    },
+    {
+      "key": "read",
+      "standard": {
+        "url": "/validation-audio/r-l/read.standard.wav",
+        "sha256": "5732813d66e713550f82c83f019b8ae44aaa8fd64cc73bba382d548d99b3e4d1"
+      },
+      "slow": {
+        "url": "/validation-audio/r-l/read.slow.wav",
+        "sha256": "3abcc51a0c97838b2cc3ebb1424e99142ae0ba45f7c4fd8e7ac4cdb7988daa00"
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { selectCountedAttempts } from "./attempts.js";
 import { assertDateOnly, assertPositiveLearningSequence, assertTrialProgramDay } from "./dates.js";
 import { selectDueReview } from "./reviews.js";
+import { assertDailyPlanContract } from "./session-contract.js";
 import type {
   ContentCandidate,
   DailyPlan,
@@ -19,9 +20,12 @@ const FOCUS_PRIORITY: Record<FocusCandidate["kind"], number> = {
   unevaluated: 3
 };
 
-export function selectFocusCandidate(candidates: readonly FocusCandidate[]): FocusCandidate | undefined {
+export function selectFocusCandidate(
+  candidates: readonly FocusCandidate[],
+  options: { allowDevelopmentValidation?: boolean } = {}
+): FocusCandidate | undefined {
   return [...candidates]
-    .filter(isUsableFocus)
+    .filter((candidate) => isUsableFocus(candidate, options.allowDevelopmentValidation === true))
     .filter((candidate) => candidate.kind !== "discovery" || candidate.reproducible === true)
     .sort((left, right) => {
       return (
@@ -43,10 +47,13 @@ export function createDailyPlan(input: {
   focusCandidates: readonly FocusCandidate[];
   content: readonly ContentCandidate[];
   reviewSchedules: readonly ReviewScheduleCandidate[];
+  allowDevelopmentValidation?: boolean;
 }):
   | { status: "ok"; plan: DailyPlan }
   | { status: "insufficient_content"; reason: string; focusGroupKey?: string } {
-  const focus = selectFocusCandidate(input.focusCandidates);
+  const focus = selectFocusCandidate(input.focusCandidates, {
+    allowDevelopmentValidation: input.allowDevelopmentValidation
+  });
   assertPositiveLearningSequence(input.learningDaySequence);
   assertTrialProgramDay(input.trialProgramDay);
   assertDateOnly(input.calendarDate);
@@ -56,9 +63,8 @@ export function createDailyPlan(input: {
     .filter(
       (candidate) =>
         candidate.contentVersionId === input.contentVersionId &&
-        candidate.active &&
-        candidate.humanReviewed &&
-        candidate.azureValidated
+        ((candidate.active && candidate.humanReviewed && candidate.azureValidated) ||
+          (input.allowDevelopmentValidation === true && candidate.developmentValidation === true))
     )
     .sort(compareContent);
   const used = new Set<string>();
@@ -155,21 +161,23 @@ export function createDailyPlan(input: {
       toPlannedItem(candidate, requiredItems.length + index + 1, "optional_extension", false, "optional_extension")
     );
 
+  const plan: DailyPlan = {
+    learningDaySequence: input.learningDaySequence,
+    trialProgramDay: input.trialProgramDay,
+    contentVersionId: input.contentVersionId,
+    originatingCalendarDate: input.calendarDate,
+    effectiveCalendarDate: input.calendarDate,
+    focusGroupKey: focus.focusGroupKey,
+    requiredCount: 5,
+    requiredItems,
+    optionalItems,
+    selectedReview: review,
+    reviewSubstitutionReason
+  };
+  assertDailyPlanContract(plan);
   return {
     status: "ok",
-    plan: {
-      learningDaySequence: input.learningDaySequence,
-      trialProgramDay: input.trialProgramDay,
-      contentVersionId: input.contentVersionId,
-      originatingCalendarDate: input.calendarDate,
-      effectiveCalendarDate: input.calendarDate,
-      focusGroupKey: focus.focusGroupKey,
-      requiredCount: 5,
-      requiredItems,
-      optionalItems,
-      selectedReview: review,
-      reviewSubstitutionReason
-    }
+    plan
   };
 }
 
@@ -364,8 +372,9 @@ function compareContent(left: ContentCandidate, right: ContentCandidate): number
   return left.promptRole.localeCompare(right.promptRole) || left.practiceItemKey.localeCompare(right.practiceItemKey);
 }
 
-function isUsableFocus(candidate: FocusCandidate): boolean {
-  return candidate.active && candidate.humanReviewed && candidate.azureValidated;
+function isUsableFocus(candidate: FocusCandidate, allowDevelopmentValidation = false): boolean {
+  return (candidate.active && candidate.humanReviewed && candidate.azureValidated) ||
+    (allowDevelopmentValidation && candidate.developmentValidation === true);
 }
 
 function nullableString(value: string | undefined): string {

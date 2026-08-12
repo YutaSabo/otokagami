@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { requestRecordingPermissionsAsync } from "expo-audio";
+import { createAudioPlayer, requestRecordingPermissionsAsync } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +11,8 @@ import { createV2AttemptPipeline } from "../../lib/v2-attempt-pipeline.mjs";
 import { createV2AudioRepository } from "../../lib/v2-audio-lifecycle.mjs";
 import { createV2DeletionCoordinator } from "../../lib/v2-deletion.mjs";
 import { createV2OutboxRepository, createV2OutboxWorker } from "../../lib/v2-outbox.mjs";
+import { nextRestoredPosition, validateV2SessionShape } from "../../lib/v2-mobile-policy.mjs";
+import { createV2TicketJournal } from "../../lib/v2-ticket-journal.mjs";
 import { resolveV2ShellState } from "../../lib/v2-session-state.mjs";
 import { normalizeManagedAzureResult } from "./normalizer-adapter";
 import { openV2Database, protectedAudioStorage, protectedTicketStore } from "./local-storage";
@@ -48,6 +50,7 @@ type ManagedItem = V2ManagedItem & {
   content_version_id: string;
   contract_version: string;
   dependency_command_id?: string | null;
+  referenceAudio?: {standardUrl:string;slowUrl:string};
 };
 
 type Session = {
@@ -56,6 +59,8 @@ type Session = {
   focus_group_key: string;
   current_position: number;
   items: ManagedItem[];
+  required_item_count?: number;
+  optional_item_count?: number;
 };
 
 type ExperienceState =
@@ -72,7 +77,15 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
   online: boolean;
 }) {
   const api = useMemo(
-    () => createV2ApiClient({ baseUrl: apiBaseUrl, getAccessToken }),
+    () => createV2ApiClient({
+      baseUrl: apiBaseUrl,
+      getAccessToken,
+      requestTimeoutMs: Number(process.env.EXPO_PUBLIC_V2_REQUEST_TIMEOUT_MS),
+      validationHeaders: __DEV__ ? {
+        "x-otokagami-installation-id": process.env.EXPO_PUBLIC_VALIDATION_INSTALLATION_ID ?? "",
+        "x-otokagami-development-client": process.env.EXPO_PUBLIC_VALIDATION_DEVELOPMENT_CLIENT_MARKER ?? ""
+      } : {}
+    }),
     [apiBaseUrl, getAccessToken]
   );
   const [state, setState] = useState<ExperienceState>({ status: "loading" });
@@ -93,14 +106,26 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
   const audioRef = useRef<any>(null);
   const workerRef = useRef<any>(null);
   const pipelineRef = useRef<any>(null);
+  const ticketJournalRef=useRef<any>(null);
   const deletionRef = useRef<any>(null);
   const bootstrapRef = useRef<Bootstrap | null>(null);
   const lastDurableCommandRef = useRef<string | null>(null);
   const pendingAudioRef = useRef(new Map<string, { fileKey: string; itemId: string; localCycleId: string }>());
+  const playerRef=useRef<ReturnType<typeof createAudioPlayer>|null>(null);
+
+  const playUri=useCallback((uri:string|null|undefined)=>{
+    if(!uri){setNotice("音声を再生できませんでした。");return;}
+    playerRef.current?.remove();
+    let resolved=uri;
+    try{resolved=new URL(uri,`${apiBaseUrl.replace(/\/$/,"")}/`).toString();}
+    catch{setNotice("音声を再生できませんでした。");return;}
+    const player=createAudioPlayer(resolved);playerRef.current=player;player.play();
+  },[apiBaseUrl]);
+  useEffect(()=>()=>{playerRef.current?.remove();},[]);
 
   const ensureDatabase = useCallback(async () => {
     if (databaseRef.current) return databaseRef.current;
-    const database = await openV2Database();
+    const database = await openV2Database(userId);
     databaseRef.current = database;
     outboxRef.current = createV2OutboxRepository(database);
     audioRef.current = createV2AudioRepository({
@@ -108,10 +133,12 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       protectedStorage: protectedAudioStorage,
       clock: localClock
     });
+    ticketJournalRef.current=createV2TicketJournal(database,localClock);
+    await ticketJournalRef.current.cleanupExpired(protectedTicketStore);
     await outboxRef.current.recoverExpiredLeases(localClock.now());
     await audioRef.current.sweep();
     return database;
-  }, []);
+  }, [userId]);
 
   const drainOutbox = useCallback(async () => {
     if (!online || !workerRef.current) return;
@@ -147,9 +174,12 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
             session_item_id: command.session_item_id,
             client_attempt_id: command.client_attempt_id,
             assessment_ticket_id: command.assessment_ticket_id,
+            ticket_request_id: command.ticket_request_id,
             assessment_ticket_nonce: ticketNonce,
             deletion_epoch: command.deletion_epoch,
+            recording_started_at: command.recording_started_at,
             captured_at: command.captured_at,
+            provider_result_received_at: command.provider_result_received_at,
             provider_projection: JSON.parse(command.strict_projection_json)
           });
         }
@@ -164,6 +194,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       }
     };
     workerRef.current = createV2OutboxWorker({
+      userId,
       repository: outboxRef.current,
       api: workerApi,
       protectedMaterialStore: protectedTicketStore,
@@ -181,6 +212,11 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
             await audioRef.current.bindCorrectionCycle(pending.localCycleId, response.correction_cycle_id);
           }
           pendingAudioRef.current.delete(command.command_id);
+        } else if (command.command_kind === "session_completion") {
+          setSession(null);
+          setResults({});
+          setComparisons({});
+          setNotice("今日の学習を保存しました。");
         }
       },
       async onPermanentFailure(command: any) {
@@ -208,12 +244,15 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       },
       normalizer: normalizeManagedAzureResult,
       outbox: outboxRef.current,
+      ticketJournal:ticketJournalRef.current,
       protectedTicketStore,
       ids: {
         materialHandle: () => Crypto.randomUUID(),
         requestId: () => Crypto.randomUUID(),
         commandId: () => Crypto.randomUUID(),
         clientAttemptId: () => Crypto.randomUUID()
+        ,ticketRequestId:()=>Crypto.randomUUID()
+        ,ticketNonce:()=>Crypto.randomUUID()
       },
       clock: localClock,
       triggerSync: drainOutbox
@@ -223,9 +262,10 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       outbox: outboxRef.current,
       audio: audioRef.current,
       api,
-      clock: localClock
+      clock: localClock,
+      protectedMaterialStore: protectedTicketStore
     });
-    const resumedDeletion = await deletionRef.current.resume();
+    const resumedDeletion = await deletionRef.current.resume(userId);
     if (resumedDeletion?.deletionEpoch !== undefined) bootstrap.deletionEpoch = resumedDeletion.deletionEpoch;
     // Keep the current epoch alongside an offline-safe, non-sensitive snapshot.
     await database.runAsync(
@@ -246,7 +286,17 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
           "SELECT snapshot_json FROM v2_local_snapshots WHERE user_id = ?", userId
         );
         if (snapshot?.snapshot_json && snapshot.snapshot_json !== "{}") {
-          setSession(JSON.parse(snapshot.snapshot_json));
+          const cached=JSON.parse(snapshot.snapshot_json);
+          setSession(cached);
+          const rows=await outboxRef.current.listUserResults(userId);
+          const restored=Object.fromEntries(rows.map((row:any)=>[row.session_item_id,{
+            expectedFocus:row.expected_focus,observedCandidate:row.observed_candidate,
+            resultLabel:row.result_label,nextActionKey:row.next_action_key,
+            syncState:row.sync_state,commandId:row.command_id
+          }]));
+          setResults(restored);
+          setLocalIndex(nextRestoredPosition(cached,restored));
+          setTab("practice");
           setState({ status: "error", reason: "OFFLINE_SNAPSHOT" });
         } else {
           setState({ status: "error", reason: "OFFLINE_NO_SNAPSHOT" });
@@ -277,9 +327,19 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
     if (online) void drainOutbox();
     const subscription = AppState.addEventListener("change", (next) => {
       if (next === "active" && online) void drainOutbox();
+      if(next!=="active"&&pipelineRef.current?.active){
+        void pipelineRef.current.cancel();setRecordingState("ready");
+        setNotice("バックグラウンドへ移動したため録音を停止しました。");
+      }
     });
     return () => subscription.remove();
   }, [drainOutbox, online]);
+  useEffect(()=>{
+    if(!online&&pipelineRef.current?.active){
+      void pipelineRef.current.cancel();setRecordingState("ready");
+      setNotice("通信が切れたため録音を停止しました。");
+    }
+  },[online]);
 
   const startSession = useCallback(async () => {
     if (state.status !== "ready" || state.readOnlyReason) return;
@@ -299,8 +359,16 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
           contract_version: result.contract_version
         }))
       };
+      validateV2SessionShape(nextSession);
       setSession(nextSession);
       setLocalIndex(Math.max(0, (nextSession.current_position ?? 1) - 1));
+      const restoredRows=await outboxRef.current.listUserResults(userId);
+      const restored=Object.fromEntries(restoredRows.map((row:any)=>[row.session_item_id,{
+        expectedFocus:row.expected_focus,observedCandidate:row.observed_candidate,resultLabel:row.result_label,
+        nextActionKey:row.next_action_key,syncState:row.sync_state,commandId:row.command_id
+      }]));
+      setResults(restored);
+      setLocalIndex(nextRestoredPosition(nextSession,restored));
       setTab("practice");
       setNotice(null);
       await databaseRef.current.runAsync(
@@ -331,6 +399,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
         setRecordingState("ready");
         return;
       }
+      const valid=await outboxRef.current.countValidAttempts(userId,item.id);
+      if(Number(valid?.count??0)>=3){setNotice("この課題の有効な判定は3回までです。");setRecordingState("ready");return;}
       await pipelineRef.current.start({
         item: {
           ...item,
@@ -338,7 +408,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
             ? localResult?.commandId ?? null
             : lastDurableCommandRef.current
         },
-        purpose
+        purpose,userId
       });
       setRecordingState("recording");
     } catch (error) {
@@ -446,15 +516,17 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
 
   const exportLearningData = useCallback(async () => {
     setSettingsBusy(true);
+    let uri:string|null=null;
     try {
       const exported = await api.exportLearningData();
-      const uri = `${FileSystem.cacheDirectory}otokagami-learning-export-${Date.now()}.json`;
+      uri = `${FileSystem.cacheDirectory}otokagami-learning-export-${Date.now()}.json`;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(exported), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/json" });
       setNotice("学習データの書き出しを準備しました。");
     } catch {
       setNotice("学習データを書き出せませんでした。");
     } finally {
+      if(uri) await FileSystem.deleteAsync(uri,{idempotent:true}).catch(()=>undefined);
       setSettingsBusy(false);
     }
   }, [api]);
@@ -470,7 +542,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
           try {
             await pipelineRef.current?.cancel();
             await deletionRef.current.begin({ requestId: Crypto.randomUUID(), userId, localEpoch: bootstrap.deletionEpoch });
-            const result = await deletionRef.current.resume();
+            const result = await deletionRef.current.resume(userId);
             if (result?.deletionEpoch !== undefined) bootstrap.deletionEpoch = result.deletionEpoch;
             setSession(null);
             setResults({});
@@ -528,10 +600,12 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
               : null}
             guidedRetryAvailable={item?.prompt_role === "anchor" && localResult?.syncState === "confirmed" && attemptPurpose !== "guided_retry"}
             readOnlyReason={readOnlyReason}
-            onPlayReference={() => setNotice("お手本音声は教材の有効化後に利用できます。")}
+            onPlayReference={() => playUri(item?.referenceAudio?.standardUrl)}
             onStartRecording={() => void startRecording("initial")}
             onStopRecording={() => void stopRecording()}
             onGuidedRetry={() => void startRecording("guided_retry")}
+            onPlayBefore={()=>void audioRef.current.resolveRepresentative(`${session?.id}:${item?.id}`,"before").then(playUri)}
+            onPlayAfter={()=>void audioRef.current.resolveRepresentative(`${session?.id}:${item?.id}`,"after").then(playUri)}
             onNext={() => void nextItem()}
           />
         ) : (
