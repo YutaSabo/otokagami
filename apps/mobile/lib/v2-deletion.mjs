@@ -84,10 +84,15 @@ export function createV2DeletionCoordinator({ database, outbox, audio, api, cloc
         const audioKeys = JSON.parse(record.pending_audio_keys_json ?? "[]");
         await audio.deleteFiles(audioKeys);
         const result = await api.deleteLearningData(record.request_id, record.local_epoch);
+        const canonicalEpoch = Math.max(
+          Number(record.local_epoch),
+          Number(record.server_epoch ?? 0),
+          Number(result.deletion_epoch ?? 0)
+        );
         await database.runAsync(
           `UPDATE v2_deletion_control SET state = 'server_confirmed', server_epoch = ?, updated_at = ?
            WHERE user_id=? AND request_id = ?`,
-          result.deletion_epoch,clock.now(),record.user_id,record.request_id
+          canonicalEpoch,clock.now(),record.user_id,record.request_id
         );
         return this.resume(record.user_id);
       }

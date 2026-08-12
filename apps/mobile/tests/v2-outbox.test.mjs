@@ -5,7 +5,7 @@ import test from "node:test";
 import { createV2AttemptPipeline } from "../lib/v2-attempt-pipeline.mjs";
 import {canRequestAnotherTicket,nextRestoredPosition,validateV2SessionShape} from "../lib/v2-mobile-policy.mjs";
 import {createV2TicketJournal,V2_TICKET_JOURNAL_SCHEMA} from "../lib/v2-ticket-journal.mjs";
-import { V2_AUDIO_INDEX_SCHEMA, audioDeletionReason } from "../lib/v2-audio-lifecycle.mjs";
+import { V2_AUDIO_INDEX_SCHEMA,audioDeletionReason,createV2AudioRepository,fixedDayClock } from "../lib/v2-audio-lifecycle.mjs";
 import { V2_DELETION_SCHEMA, canSendLearningCommands, createV2DeletionCoordinator, nextDeletionAction } from "../lib/v2-deletion.mjs";
 import { V2_OUTBOX_SCHEMA, createV2OutboxRepository, createV2OutboxWorker } from "../lib/v2-outbox.mjs";
 
@@ -36,6 +36,18 @@ test("enqueue and local result are one transaction; FIFO dependencies wait for c
   await repository.acknowledge("a", "lease-a", iso(1));
   const second = await repository.leaseNext({userId:"user", leaseId: "lease-b", now: iso(1), leaseExpiresAt: iso(60) });
   assert.equal(second.command_id, "b");
+});
+
+test("outbox capacity and dependencies are isolated by authenticated user",async()=>{
+  const db=sqliteAdapter();await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const repository=createV2OutboxRepository(db);repository.setLimits({...syncConfig(),maxItems:1});
+  await repository.enqueue(command("user-a",null),localResult());
+  const other=command("user-b",null);other.userId="other-user";other.clientAttemptId="attempt-other";
+  await repository.enqueue(other,localResult());
+  repository.setLimits({...syncConfig(),maxItems:2});
+  const cross=control("cross","session_completion","user-a");cross.userId="other-user";
+  await assert.rejects(()=>repository.enqueueControl(cross),(error)=>error.code==="CROSS_USER_DEPENDENCY");
+  assert.equal((await repository.leaseNext({userId:"other-user",leaseId:"other-lease",now:iso(0),leaseExpiresAt:iso(60)})).command_id,"user-b");
 });
 
 test("outbox capacity is enforced in UTF-8 bytes rather than character count", async () => {
@@ -149,6 +161,8 @@ test("session contract enforces required five, optional zero to two, and restore
  assert.deepEqual(validateV2SessionShape({items}),{requiredCount:5,optionalCount:2});
  assert.throws(()=>validateV2SessionShape({items:items.slice(0,4)}),error=>error.code==="REQUIRED_ITEM_COUNT_INVALID");
  assert.equal(nextRestoredPosition({items},{i0:{},i1:{}}),2);
+ assert.equal(nextRestoredPosition({items},{i0:{},i1:{},i2:{},i3:{},i4:{}}),4);
+ assert.equal(nextRestoredPosition({items},{i0:{},i1:{},i2:{},i3:{},i4:{},i5:{}}),6);
 });
 
 test("valid attempt guard stops after three while invalid attempts do not consume capacity",()=>{
@@ -218,11 +232,87 @@ test("deletion cleanup is locally atomic and resumes the same server request aft
   assert.equal(calls, 2);
 });
 
+test("stale delete replay cannot decrease the local deletion epoch",async()=>{
+  const db=sqliteAdapter();await db.execAsync(`${V2_DELETION_SCHEMA}\n${V2_AUDIO_INDEX_SCHEMA}\n${V2_OUTBOX_SCHEMA}`);
+  const coordinator=createV2DeletionCoordinator({database:db,
+    outbox:{async purgeAllForUser(){},async listProtectedMaterialCleanup(){return[];}},
+    audio:{async listFileKeysForUser(){return[];},async deleteIndexForUser(){},async deleteFiles(){}},
+    api:{async deleteLearningData(){return{deletion_epoch:1};}},clock:{now:()=>iso(1)},
+    protectedMaterialStore:{async delete(){}}
+  });
+  await coordinator.begin({requestId:"stale-request",userId:"user",localEpoch:3});
+  const result=await coordinator.resume("user");
+  assert.equal(result.deletionEpoch,3);
+  assert.equal((await db.getFirstAsync("SELECT local_epoch FROM v2_deletion_control WHERE user_id='user'")).local_epoch,3);
+});
+
 test("local audio policy expires at 30 days, Day 14, or missing without exposing paths", () => {
   assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:00Z"), null);
   assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: "2026-08-24T00:00:00Z" }, "2026-08-24T00:00:00Z"), "day_14_completed");
   assert.equal(audioDeletionReason({ availability: "available", deleteAfter: "2026-08-10T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:01Z"), "retention_expired");
   assert.equal(audioDeletionReason({ availability: "missing", deleteAfter: "2026-09-09T00:00:00Z", day14CompletedAt: null }, "2026-08-10T00:00:00Z"), "not_available");
+});
+
+test("audio index survives restart and binds before/after through the confirmed command",async()=>{
+  const db=sqliteAdapter();
+  const stored=new Set();
+  const storage={async storeAudio(_source,key){stored.add(key);},async deleteAudio(key){stored.delete(key);},
+    async deleteTemporary(){},async audioExists(key){return stored.has(key);},async resolveAudio(key){return`opaque:${key}`;}};
+  const first=createV2AudioRepository({database:db,protectedStorage:storage,clock:fixedDayClock(iso(0))});
+  await first.migrate();
+  await first.selectRepresentative({sourceUri:"temporary-before",fileKey:"before.wav",userId:"user",
+    correctionCycleId:"local-cycle",contentVersionId:"content",attemptRole:"before",pendingCommandId:"before-command"});
+  await first.selectRepresentative({sourceUri:"temporary-after",fileKey:"after.wav",userId:"user",
+    correctionCycleId:"local-cycle",contentVersionId:"content",attemptRole:"after",pendingCommandId:"after-command"});
+  await first.selectRepresentative({sourceUri:"other-user-before",fileKey:"other-before.wav",userId:"other-user",
+    correctionCycleId:"local-cycle",contentVersionId:"content",attemptRole:"before",pendingCommandId:"other-command"});
+  const reopened=createV2AudioRepository({database:db,protectedStorage:storage,clock:fixedDayClock(iso(1))});
+  await reopened.migrate();
+  assert.equal(await reopened.bindCorrectionCycleForCommand("user","after-command","server-cycle"),true);
+  assert.equal(await reopened.resolveRepresentative("user","server-cycle","before"),"opaque:before.wav");
+  assert.equal(await reopened.resolveRepresentative("user","server-cycle","after"),"opaque:after.wav");
+  assert.equal(await reopened.resolveRepresentative("other-user","local-cycle","before"),"opaque:other-before.wav");
+  assert.equal((await db.getFirstAsync(
+    "SELECT count(*) AS n FROM v2_audio_index WHERE user_id='user' AND pending_command_id IS NOT NULL"
+  )).n,0);
+});
+
+test("audio index migration preserves rows while adding user-scoped uniqueness",async()=>{
+  const db=sqliteAdapter();
+  await db.execAsync(`CREATE TABLE v2_audio_index(
+    file_key TEXT PRIMARY KEY NOT NULL,user_id TEXT NOT NULL,correction_cycle_id TEXT NOT NULL,
+    content_version_id TEXT NOT NULL,attempt_role TEXT NOT NULL,created_at TEXT NOT NULL,
+    delete_after TEXT NOT NULL,day_14_completed_at TEXT,availability TEXT NOT NULL,
+    UNIQUE(correction_cycle_id,attempt_role));
+    INSERT INTO v2_audio_index VALUES('before.wav','user','cycle','content','before','${iso(0)}','${iso(600)}',NULL,'available');`);
+  const repository=createV2AudioRepository({database:db,protectedStorage:{},clock:fixedDayClock(iso(0))});
+  await repository.migrate();
+  assert.equal((await db.getFirstAsync("SELECT count(*) AS n FROM v2_audio_index WHERE user_id='user'")).n,1);
+  const schema=await db.getFirstAsync("SELECT sql FROM sqlite_master WHERE type='table' AND name='v2_audio_index'");
+  assert.match(schema.sql.replace(/\s+/g,""),/UNIQUE\(user_id,correction_cycle_id,attempt_role\)/);
+  assert.equal((await db.getAllAsync("PRAGMA table_info(v2_audio_index)"))
+    .some((column)=>column.name==="pending_command_id"),true);
+});
+
+test("a pre-enqueue failure cancels the server ticket before deleting its protected nonce",async()=>{
+  const events=[];
+  const pipeline=createV2AttemptPipeline({
+    api:{async speechToken(){return ticket();},async cancelSpeechToken(){events.push("server-cancel");}},
+    native:{async prepare(){},async start(){},async finish(){return{rawJson:{RecognitionStatus:"Success"}};},
+      async cancel(){},async deleteTemporary(){}},
+    normalizer(){throw Object.assign(new Error("projection rejected"),{code:"BAD_PROJECTION"});},
+    outbox:{async enqueue(){throw new Error("must not enqueue");}},
+    ticketJournal:{async findReusable(){return null;},async begin(){},async markReady(){},
+      async markCancelled(){events.push("journal-cancelled");}},
+    protectedTicketStore:{async save(){},async read(){return"local-nonce";},async delete(){events.push("nonce-deleted");}},
+    ids:{materialHandle:()=>"handle",requestId:()=>"request",ticketRequestId:()=>"ticket-request",
+      ticketNonce:()=>"local-nonce",commandId:()=>"command",clientAttemptId:()=>"attempt"},
+    clock:{now:()=>iso(0)},triggerSync(){}
+  });
+  await pipeline.start({item:item(),userId:"user"});
+  await assert.rejects(()=>pipeline.finish({payloadByteLimit:1000,userId:"user",sessionId:"session",
+    deletionEpoch:0,onLocalResult(){}}),/projection rejected/);
+  assert.deepEqual(events,["server-cancel","journal-cancelled","nonce-deleted"]);
 });
 
 test("attempt pipeline displays local result and schedules sync without awaiting server ACK", async () => {

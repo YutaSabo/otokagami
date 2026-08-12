@@ -137,7 +137,7 @@ export function createV2OutboxRepository(database) {
       validateCommand(command);
       validateLocalResult(localResult);
       return database.withTransactionAsync(async () => {
-        await assertCapacity(database, limits, utf8Bytes(JSON.stringify(command.strictProjection ?? {})));
+        await assertCapacity(database, limits, utf8Bytes(JSON.stringify(command.strictProjection ?? {})),command.userId);
         const barrier = await database.getFirstAsync(
           "SELECT request_id FROM v2_deletion_control WHERE user_id=? AND state!='idle'",command.userId
         ).catch(() => null);
@@ -148,6 +148,12 @@ export function createV2OutboxRepository(database) {
         );
         if (epoch && Number(epoch.deletion_epoch) !== command.deletionEpoch) {
           throw codedError("DELETION_EPOCH_CONFLICT");
+        }
+        if (command.dependencyCommandId) {
+          const dependency = await database.getFirstAsync(
+            "SELECT user_id FROM v2_outbox_commands WHERE command_id=?",command.dependencyCommandId
+          );
+          if (!dependency || dependency.user_id !== command.userId) throw codedError("CROSS_USER_DEPENDENCY");
         }
         await database.runAsync(
           `INSERT INTO v2_outbox_commands (
@@ -191,11 +197,17 @@ export function createV2OutboxRepository(database) {
       const serialized = JSON.stringify(controlPayload);
       if (forbiddenMaterial(serialized)) throw new TypeError("Control command contains forbidden material.");
       return database.withTransactionAsync(async () => {
-        await assertCapacity(database, limits, utf8Bytes(serialized));
+        await assertCapacity(database, limits, utf8Bytes(serialized),command.userId);
         const barrier = await database.getFirstAsync(
           "SELECT request_id FROM v2_deletion_control WHERE user_id=? AND state!='idle'",command.userId
         ).catch(() => null);
         if (barrier) throw codedError("DELETION_IN_PROGRESS");
+        if (command.dependencyCommandId) {
+          const dependency = await database.getFirstAsync(
+            "SELECT user_id FROM v2_outbox_commands WHERE command_id=?",command.dependencyCommandId
+          );
+          if (!dependency || dependency.user_id !== command.userId) throw codedError("CROSS_USER_DEPENDENCY");
+        }
         await database.runAsync(
           `INSERT INTO v2_outbox_commands (
             command_id, command_kind, user_id, session_id, session_item_id, content_version_id,
@@ -235,7 +247,7 @@ export function createV2OutboxRepository(database) {
            WHERE c.state IN ('pending','retryable')
              AND c.user_id=?
              AND (c.next_attempt_at IS NULL OR c.next_attempt_at <= ?)
-             AND (c.dependency_command_id IS NULL OR dependency.state = 'confirmed')
+             AND (c.dependency_command_id IS NULL OR (dependency.state = 'confirmed' AND dependency.user_id=c.user_id))
            ORDER BY c.created_at ASC LIMIT 1
          ) AND state IN ('pending','retryable')
          RETURNING *, (
@@ -348,12 +360,12 @@ export function createV2OutboxRepository(database) {
       return withinTransaction?operation():database.withTransactionAsync(operation);
     },
 
-    recoverExpiredLeases(now) {
+    recoverExpiredLeases(now,userId=null) {
       return database.runAsync(
         `UPDATE v2_outbox_commands SET state = 'retryable', lease_id = NULL, lease_expires_at = NULL,
            error_code = 'WORKER_INTERRUPTED', updated_at = ?
-         WHERE state = 'sending' AND lease_expires_at <= ?`,
-        now, now
+         WHERE state = 'sending' AND lease_expires_at <= ? AND (? IS NULL OR user_id=?)`,
+        now,now,userId,userId
       );
     },
 
@@ -503,13 +515,13 @@ function codedError(code) {
   return Object.assign(new Error(code), { code });
 }
 
-async function assertCapacity(database, limits, incomingBytes) {
+async function assertCapacity(database, limits, incomingBytes, userId) {
   if (!limits) throw codedError("V2_SYNC_CONFIG_REQUIRED");
   const usage = await database.getFirstAsync(
     `SELECT count(*) AS item_count,
        coalesce(sum(length(CAST(coalesce(strict_projection_json,'') AS BLOB)) +
                     length(CAST(coalesce(control_payload_json,'') AS BLOB))),0) AS payload_bytes
-     FROM v2_outbox_commands WHERE state NOT IN ('confirmed','permanent_failure')`
+     FROM v2_outbox_commands WHERE user_id=? AND state NOT IN ('confirmed','permanent_failure')`,userId
   );
   if (Number(usage?.item_count ?? 0) >= limits.maxItems || Number(usage?.payload_bytes ?? 0) + incomingBytes > limits.maxBytes) {
     throw codedError("OUTBOX_CAPACITY_REACHED");

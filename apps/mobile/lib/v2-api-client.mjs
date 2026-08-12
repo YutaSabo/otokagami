@@ -14,7 +14,7 @@ export function classifyV2OutboxError(error) {
   return "permanent_failure";
 }
 
-export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,validationHeaders={},requestTimeoutMs }) {
+export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,validationHeaders={},requestTimeoutMs,responseMaxBytes }) {
   if (!isHttpUrl(baseUrl)) throw new TypeError("A valid v2 API base URL is required.");
   if (typeof getAccessToken !== "function") throw new TypeError("getAccessToken is required.");
 
@@ -22,11 +22,15 @@ export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,valid
     if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs <= 0) {
       throw new V2ApiError("V2_CLIENT_TIMEOUT_CONFIG_REQUIRED","通信設定が未確定です。",503,false);
     }
+    if (!Number.isSafeInteger(responseMaxBytes) || responseMaxBytes <= 0) {
+      throw new V2ApiError("V2_CLIENT_RESPONSE_LIMIT_CONFIG_REQUIRED","応答サイズ設定が未確定です。",503,false);
+    }
     const accessToken = await getAccessToken();
     if (typeof accessToken !== "string" || accessToken.length === 0) {
       throw new V2ApiError("UNAUTHORIZED", "認証が必要です。", 401, false);
     }
     let response;
+    let payload;
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort("timeout"),requestTimeoutMs);
     const forwardAbort=()=>controller.abort(signal?.reason);
@@ -42,7 +46,9 @@ export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,valid
         body: body === undefined ? undefined : JSON.stringify(body),
         signal:controller.signal
       });
+      payload = await readBoundedJsonResponse(response,responseMaxBytes,controller.signal);
     } catch (error) {
+      if (error instanceof V2ApiError) throw error;
       if (controller.signal.aborted && !signal?.aborted) {
         throw new V2ApiError("REQUEST_TIMEOUT","通信がタイムアウトしました。",408,true);
       }
@@ -52,7 +58,6 @@ export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,valid
       clearTimeout(timer);
       signal?.removeEventListener?.("abort",forwardAbort);
     }
-    const payload = await response.json().catch(() => null);
     if (!response.ok || payload?.ok !== true || payload.data === undefined) {
       throw new V2ApiError(
         typeof payload?.error?.code === "string" ? payload.error.code : "REQUEST_FAILED",
@@ -96,6 +101,47 @@ export function createV2ApiClient({ baseUrl,getAccessToken,fetchImpl=fetch,valid
         expected_deletion_epoch: expectedDeletionEpoch
       }
     })
+  });
+}
+
+async function readBoundedJsonResponse(response,maxBytes,signal) {
+  const declared=Number(response.headers?.get?.("content-length"));
+  if(Number.isFinite(declared)&&declared>maxBytes){
+    throw new V2ApiError("RESPONSE_TOO_LARGE","応答が大きすぎます。",502,false);
+  }
+  const reader=response.body?.getReader?.();
+  if(reader){
+    const chunks=[];let total=0;
+    try{
+      while(true){
+        const {done,value}=await readResponseChunk(reader,signal);
+        if(done)break;
+        total+=value.byteLength;
+        if(total>maxBytes){await reader.cancel?.();throw new V2ApiError("RESPONSE_TOO_LARGE","応答が大きすぎます。",502,false);}
+        chunks.push(value);
+      }
+    }finally{reader.releaseLock?.();}
+    const joined=new Uint8Array(total);let offset=0;
+    for(const chunk of chunks){joined.set(chunk,offset);offset+=chunk.byteLength;}
+    try{return JSON.parse(new TextDecoder().decode(joined));}catch{return null;}
+  }
+  const text=await response.text();
+  if(new TextEncoder().encode(text).byteLength>maxBytes){
+    throw new V2ApiError("RESPONSE_TOO_LARGE","応答が大きすぎます。",502,false);
+  }
+  try{return JSON.parse(text);}catch{return null;}
+}
+
+async function readResponseChunk(reader,signal){
+  if(!signal)return reader.read();
+  if(signal.aborted)throw Object.assign(new Error("response aborted"),{name:"AbortError"});
+  return new Promise((resolve,reject)=>{
+    const abort=()=>{
+      reader.cancel?.("response timeout").catch?.(()=>undefined);
+      reject(Object.assign(new Error("response aborted"),{name:"AbortError"}));
+    };
+    signal.addEventListener("abort",abort,{once:true});
+    reader.read().then(resolve,reject).finally(()=>signal.removeEventListener("abort",abort));
   });
 }
 

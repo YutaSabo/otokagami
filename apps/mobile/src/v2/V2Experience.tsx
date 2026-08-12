@@ -43,6 +43,7 @@ type ManagedItem = V2ManagedItem & {
   reference_text_version: string;
   target_locator: { wordIndex: number; phonemeIndex: number };
   next_action_key?: string | null;
+  coach_text?: string | null;
   review_schedule_id?: string | null;
   review_source_evidence_id?: string | null;
   review_due_date?: string | null;
@@ -81,6 +82,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       baseUrl: apiBaseUrl,
       getAccessToken,
       requestTimeoutMs: Number(process.env.EXPO_PUBLIC_V2_REQUEST_TIMEOUT_MS),
+      responseMaxBytes: Number(process.env.EXPO_PUBLIC_V2_RESPONSE_MAX_BYTES),
       validationHeaders: __DEV__ ? {
         "x-otokagami-installation-id": process.env.EXPO_PUBLIC_VALIDATION_INSTALLATION_ID ?? "",
         "x-otokagami-development-client": process.env.EXPO_PUBLIC_VALIDATION_DEVELOPMENT_CLIENT_MARKER ?? ""
@@ -101,6 +103,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
     after: V2LocalResult | null;
   }>>({});
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [validAttemptCounts,setValidAttemptCounts]=useState<Record<string,number>>({});
+  const [completionCommandId,setCompletionCommandId]=useState<string|null>(null);
   const databaseRef = useRef<any>(null);
   const outboxRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
@@ -110,8 +114,23 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
   const deletionRef = useRef<any>(null);
   const bootstrapRef = useRef<Bootstrap | null>(null);
   const lastDurableCommandRef = useRef<string | null>(null);
+  const lastRequiredCommandRef = useRef<string | null>(null);
   const pendingAudioRef = useRef(new Map<string, { fileKey: string; itemId: string; localCycleId: string }>());
   const playerRef=useRef<ReturnType<typeof createAudioPlayer>|null>(null);
+  const activeUserRef=useRef(userId);
+
+  useEffect(()=>{
+    if(activeUserRef.current===userId)return;
+    const previousPipeline=pipelineRef.current;
+    const previousDatabase=databaseRef.current;
+    pipelineRef.current=null;workerRef.current=null;ticketJournalRef.current=null;
+    outboxRef.current=null;audioRef.current=null;deletionRef.current=null;databaseRef.current=null;
+    bootstrapRef.current=null;lastDurableCommandRef.current=null;lastRequiredCommandRef.current=null;
+    pendingAudioRef.current.clear();activeUserRef.current=userId;
+    void previousPipeline?.cancel();void previousDatabase?.closeAsync?.();
+    setSession(null);setResults({});setComparisons({});setValidAttemptCounts({});
+    setCompletionCommandId(null);setLocalIndex(0);setRecordingState("ready");setTab("home");
+  },[userId]);
 
   const playUri=useCallback((uri:string|null|undefined)=>{
     if(!uri){setNotice("音声を再生できませんでした。");return;}
@@ -135,10 +154,20 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
     });
     ticketJournalRef.current=createV2TicketJournal(database,localClock);
     await ticketJournalRef.current.cleanupExpired(protectedTicketStore);
-    await outboxRef.current.recoverExpiredLeases(localClock.now());
+    await outboxRef.current.recoverExpiredLeases(localClock.now(),userId);
     await audioRef.current.sweep();
     return database;
   }, [userId]);
+
+  useEffect(()=>{
+    if(!databaseRef.current||!session)return;
+    const snapshot={session,localIndex,results,comparisons,
+      lastRequiredCommandId:lastRequiredCommandRef.current,completionCommandId};
+    void databaseRef.current.runAsync(
+      "UPDATE v2_local_snapshots SET snapshot_json=?,updated_at=? WHERE user_id=?",
+      JSON.stringify(snapshot),localClock.now(),userId
+    );
+  },[session,localIndex,results,comparisons,completionCommandId,userId]);
 
   const drainOutbox = useCallback(async () => {
     if (!online || !workerRef.current) return;
@@ -208,14 +237,19 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
             return { ...current, [found[0]]: { ...found[1], syncState: "confirmed" } };
           });
           const pending = pendingAudioRef.current.get(command.command_id);
-          if (pending && typeof response?.correction_cycle_id === "string") {
-            await audioRef.current.bindCorrectionCycle(pending.localCycleId, response.correction_cycle_id);
+          if (typeof response?.correction_cycle_id === "string") {
+            await audioRef.current.bindCorrectionCycleForCommand(
+              command.user_id,command.command_id,response.correction_cycle_id
+            );
           }
           pendingAudioRef.current.delete(command.command_id);
         } else if (command.command_kind === "session_completion") {
           setSession(null);
           setResults({});
           setComparisons({});
+          setCompletionCommandId(null);
+          lastDurableCommandRef.current=null;
+          lastRequiredCommandRef.current=null;
           setNotice("今日の学習を保存しました。");
         }
       },
@@ -226,11 +260,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
           if (!found) return current;
           return { ...current, [found[0]]: { ...found[1], syncState: "permanent_failure" } };
         });
-        const pending = pendingAudioRef.current.get(command.command_id);
-        if (pending) {
-          await protectedAudioStorage.deleteAudio(pending.fileKey).catch(() => undefined);
-          pendingAudioRef.current.delete(command.command_id);
-        }
+        await audioRef.current.discardForCommand(command.user_id,command.command_id);
+        pendingAudioRef.current.delete(command.command_id);
       }
     });
     pipelineRef.current = createV2AttemptPipeline({
@@ -287,15 +318,25 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
         );
         if (snapshot?.snapshot_json && snapshot.snapshot_json !== "{}") {
           const cached=JSON.parse(snapshot.snapshot_json);
-          setSession(cached);
-          const rows=await outboxRef.current.listUserResults(userId);
+          const cachedSession=cached.session??cached;
+          setSession(cachedSession);
+          const rows=(await outboxRef.current.listUserResults(userId))
+            .filter((row:any)=>row.session_id===cachedSession.id);
           const restored=Object.fromEntries(rows.map((row:any)=>[row.session_item_id,{
             expectedFocus:row.expected_focus,observedCandidate:row.observed_candidate,
             resultLabel:row.result_label,nextActionKey:row.next_action_key,
-            syncState:row.sync_state,commandId:row.command_id
+            syncState:row.sync_state,commandId:row.command_id,technicalValid:Number(row.technical_valid)===1
           }]));
           setResults(restored);
-          setLocalIndex(nextRestoredPosition(cached,restored));
+          const cachedCounts:Record<string,number>={};
+          for(const row of rows){if(Number(row.technical_valid)===1)cachedCounts[row.session_item_id]=(cachedCounts[row.session_item_id]??0)+1;}
+          setValidAttemptCounts(cachedCounts);
+          setLocalIndex(Number.isSafeInteger(cached.localIndex)?cached.localIndex:nextRestoredPosition(cachedSession,restored));
+          if(cached.comparisons)setComparisons(cached.comparisons);
+          lastRequiredCommandRef.current=cached.lastRequiredCommandId??null;
+          lastDurableCommandRef.current=[...rows].reverse()
+            .find((row:any)=>Number(row.technical_valid)===1)?.command_id??null;
+          setCompletionCommandId(cached.completionCommandId??null);
           setTab("practice");
           setState({ status: "error", reason: "OFFLINE_SNAPSHOT" });
         } else {
@@ -362,18 +403,50 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       validateV2SessionShape(nextSession);
       setSession(nextSession);
       setLocalIndex(Math.max(0, (nextSession.current_position ?? 1) - 1));
-      const restoredRows=await outboxRef.current.listUserResults(userId);
+      const restoredRows=(await outboxRef.current.listUserResults(userId))
+        .filter((row:any)=>row.session_id===nextSession.id);
       const restored=Object.fromEntries(restoredRows.map((row:any)=>[row.session_item_id,{
         expectedFocus:row.expected_focus,observedCandidate:row.observed_candidate,resultLabel:row.result_label,
-        nextActionKey:row.next_action_key,syncState:row.sync_state,commandId:row.command_id
+        nextActionKey:row.next_action_key,syncState:row.sync_state,commandId:row.command_id,
+        technicalValid:Number(row.technical_valid)===1
       }]));
       setResults(restored);
-      setLocalIndex(nextRestoredPosition(nextSession,restored));
+      const counts:Record<string,number>={};
+      for(const row of restoredRows){if(Number(row.technical_valid)===1)counts[row.session_item_id]=(counts[row.session_item_id]??0)+1;}
+      setValidAttemptCounts(counts);
+      lastDurableCommandRef.current=[...restoredRows].reverse()
+        .find((row:any)=>Number(row.technical_valid)===1)?.command_id??null;
+      let restoredIndex=nextRestoredPosition(nextSession,restored);
+      let restoredCompletionCommandId:string|null=null;
+      const lastRequiredItem=[...nextSession.items].reverse().find((entry)=>entry.required===true);
+      let restoredLastRequiredCommandId=lastRequiredItem
+        ? restored[lastRequiredItem.id]?.commandId??null
+        : null;
+      let restoredComparisons:Record<string,{before:V2LocalResult|null;after:V2LocalResult|null}>={};
+      const cachedRow=await databaseRef.current.getFirstAsync(
+        "SELECT snapshot_json FROM v2_local_snapshots WHERE user_id=?",userId
+      );
+      try{
+        const cached=JSON.parse(cachedRow?.snapshot_json??"{}");
+        if(cached?.session?.id===nextSession.id){
+          if(Number.isSafeInteger(cached.localIndex)&&cached.localIndex>=0&&
+            cached.localIndex<nextSession.items.length)restoredIndex=cached.localIndex;
+          restoredCompletionCommandId=cached.completionCommandId??null;
+          restoredLastRequiredCommandId=cached.lastRequiredCommandId??null;
+          restoredComparisons=cached.comparisons??{};
+        }
+      }catch{/* corrupt local snapshot falls back to server/result-derived position */}
+      setLocalIndex(restoredIndex);
+      setCompletionCommandId(restoredCompletionCommandId);
+      lastRequiredCommandRef.current=restoredLastRequiredCommandId;
+      setComparisons(restoredComparisons);
       setTab("practice");
       setNotice(null);
       await databaseRef.current.runAsync(
         "UPDATE v2_local_snapshots SET snapshot_json = ?, updated_at = ? WHERE user_id = ?",
-        JSON.stringify(nextSession), localClock.now(), userId
+        JSON.stringify({session:nextSession,localIndex:restoredIndex,results:restored,
+          comparisons:restoredComparisons,lastRequiredCommandId:restoredLastRequiredCommandId,
+          completionCommandId:restoredCompletionCommandId}), localClock.now(), userId
       );
     } catch (error) {
       const code = error instanceof V2ApiError ? error.code : "NETWORK_UNAVAILABLE";
@@ -383,6 +456,12 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
 
   const item = session?.items[localIndex] ?? null;
   const localResult = item ? results[item.id] ?? null : null;
+  const requiredIndexes=session?.items.map((entry,index)=>entry.required===true?index:-1).filter((index)=>index>=0)??[];
+  const optionalIndexes=session?.items.map((entry,index)=>entry.required===false?index:-1).filter((index)=>index>=0)??[];
+  const lastRequiredIndex=requiredIndexes.at(-1)??-1;
+  const nextOptionalIndex=optionalIndexes.find((index)=>index>localIndex)??null;
+  const completionAvailable=Boolean(localResult?.technicalValid)&&
+    (localIndex===lastRequiredIndex||optionalIndexes.includes(localIndex));
 
   const startRecording = useCallback(async (purpose: "initial" | "guided_retry" = "initial") => {
     if (!item || !pipelineRef.current || state.status !== "ready" || state.readOnlyReason) return;
@@ -400,7 +479,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
         return;
       }
       const valid=await outboxRef.current.countValidAttempts(userId,item.id);
-      if(Number(valid?.count??0)>=3){setNotice("この課題の有効な判定は3回までです。");setRecordingState("ready");return;}
+      const validCount=Math.max(Number(valid?.count??0),validAttemptCounts[item.id]??0);
+      if(validCount>=3){setNotice("この課題の有効な判定は3回までです。");setRecordingState("ready");return;}
       await pipelineRef.current.start({
         item: {
           ...item,
@@ -415,7 +495,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       setRecordingState("ready");
       setNotice(error instanceof V2ApiError ? error.message : "録音を開始できませんでした。");
     }
-  }, [item, localResult, state]);
+  }, [item, localResult, state,userId,validAttemptCounts]);
 
   const stopRecording = useCallback(async () => {
     if (!item || !session || !pipelineRef.current || !bootstrapRef.current) return;
@@ -427,6 +507,9 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
         deletionEpoch: bootstrapRef.current.deletionEpoch,
         async onLocalResult(result: LocalResultWithCommand & { localAudioSource?: string; technicalValid?: boolean }) {
           setResults((current) => ({ ...current, [item.id]: result }));
+          if(result.technicalValid){
+            setValidAttemptCounts((current)=>({...current,[item.id]:Math.min(3,(current[item.id]??0)+1)}));
+          }
           setComparisons((current) => {
             const previous = current[item.id] ?? { before: null, after: null };
             return {
@@ -445,7 +528,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
                 userId,
                 correctionCycleId: `${session.id}:${item.id}`,
                 contentVersionId: item.content_version_id,
-                attemptRole: attemptPurpose === "guided_retry" ? "after" : "before"
+                attemptRole: attemptPurpose === "guided_retry" ? "after" : "before",
+                pendingCommandId:result.commandId
               });
               pendingAudioRef.current.set(result.commandId, {
                 fileKey,
@@ -480,6 +564,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
         durableDependency = reviewCommandId;
       }
       lastDurableCommandRef.current = durableDependency;
+      if(item.required===true)lastRequiredCommandRef.current=durableDependency;
       setRecordingState("ready");
       void drainOutbox();
     } catch (error) {
@@ -488,31 +573,31 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
     }
   }, [attemptPurpose, drainOutbox, item, session, userId]);
 
+  const enqueueCompletion=useCallback(async()=>{
+    if(!session||!item||!bootstrapRef.current?.outboxPolicy||bootstrapRef.current.deletionEpoch===null||
+      !lastRequiredCommandRef.current||completionCommandId)return;
+    const commandId=Crypto.randomUUID();
+    const completionKey=Crypto.randomUUID();
+    await outboxRef.current.enqueueControl(controlCommand({
+      bootstrap:bootstrapRef.current,session,item,commandId,commandKind:"session_completion",
+      dependencyCommandId:lastRequiredCommandRef.current,
+      submissionExpiresAt:addSeconds(localClock.now(),bootstrapRef.current.outboxPolicy.retention_seconds),
+      payload:{completion_idempotency_key:completionKey},userId
+    }));
+    setCompletionCommandId(commandId);
+    setNotice("今日の完了を確認中です。サーバー確認後に確定します。");
+    void drainOutbox();
+  },[completionCommandId,drainOutbox,item,session,userId]);
+
   const nextItem = useCallback(async () => {
-    if (!session || !item || !localResult || localResult.syncState === "permanent_failure") return;
+    if (!session || !item || !localResult || !localResult.technicalValid || localResult.syncState === "permanent_failure") return;
     if (localIndex < session.items.length - 1) {
       setLocalIndex((current) => current + 1);
       setAttemptPurpose("initial");
       return;
     }
-    const bootstrap = bootstrapRef.current;
-    if (!bootstrap?.outboxPolicy || bootstrap.deletionEpoch === null || !lastDurableCommandRef.current) return;
-    const commandId = Crypto.randomUUID();
-    await outboxRef.current.enqueueControl(controlCommand({
-      bootstrap,
-      session,
-      item,
-      commandId,
-      commandKind: "session_completion",
-      dependencyCommandId: lastDurableCommandRef.current,
-      submissionExpiresAt: addSeconds(localClock.now(), bootstrap.outboxPolicy.retention_seconds),
-      payload: { completion_idempotency_key: Crypto.randomUUID() },
-      userId
-    }));
-    setNotice("結果は端末に保存されました。サーバー確認後に今日の完了が確定します。");
-    setTab("home");
-    void drainOutbox();
-  }, [drainOutbox, item, localIndex, localResult, session, userId]);
+    await enqueueCompletion();
+  }, [enqueueCompletion,item,localIndex,localResult,session]);
 
   const exportLearningData = useCallback(async () => {
     setSettingsBusy(true);
@@ -533,7 +618,7 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
 
   const requestLearningDeletion = useCallback(() => {
     const bootstrap = bootstrapRef.current;
-    if (!deletionRef.current || bootstrap?.deletionEpoch === null || bootstrap?.deletionEpoch === undefined) return;
+    if (!deletionRef.current) { setNotice("削除の準備が完了していません。再度お試しください。"); return; }
     Alert.alert("学習データを削除", "購読権限と無料体験の利用履歴は保持されます。学習履歴を削除しますか？", [
       { text: "キャンセル", style: "cancel" },
       {
@@ -541,9 +626,15 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
           setSettingsBusy(true);
           try {
             await pipelineRef.current?.cancel();
-            await deletionRef.current.begin({ requestId: Crypto.randomUUID(), userId, localEpoch: bootstrap.deletionEpoch });
+            const storedEpoch=await databaseRef.current.getFirstAsync(
+              "SELECT deletion_epoch FROM v2_local_snapshots WHERE user_id=?",userId
+            );
+            const localEpoch=Math.max(Number(storedEpoch?.deletion_epoch??0),Number(bootstrap?.deletionEpoch??0));
+            await deletionRef.current.begin({ requestId: Crypto.randomUUID(), userId, localEpoch });
             const result = await deletionRef.current.resume(userId);
-            if (result?.deletionEpoch !== undefined) bootstrap.deletionEpoch = result.deletionEpoch;
+            if (result?.deletionEpoch !== undefined && bootstrap) bootstrap.deletionEpoch = Math.max(
+              Number(bootstrap.deletionEpoch??0),Number(result.deletionEpoch)
+            );
             setSession(null);
             setResults({});
             setComparisons({});
@@ -595,17 +686,21 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
             state={recordingState}
             localResult={localResult}
             comparison={item ? comparisons[item.id] ?? null : null}
-            coachText={localResult && item?.next_action_key && item.prompt_role === "anchor"
-              ? "焦点音の位置を意識し、同じ速さでもう一度発音します。"
-              : null}
+            coachText={localResult && item?.next_action_key ? item.coach_text??null : null}
             guidedRetryAvailable={item?.prompt_role === "anchor" && localResult?.syncState === "confirmed" && attemptPurpose !== "guided_retry"}
+            remainingValidAttempts={item?Math.max(0,3-(validAttemptCounts[item.id]??0)):0}
+            completionAvailable={completionAvailable}
+            additionalPracticeAvailable={completionAvailable&&nextOptionalIndex!==null}
             readOnlyReason={readOnlyReason}
             onPlayReference={() => playUri(item?.referenceAudio?.standardUrl)}
+            onPlayReferenceSlow={() => playUri(item?.referenceAudio?.slowUrl)}
             onStartRecording={() => void startRecording("initial")}
             onStopRecording={() => void stopRecording()}
             onGuidedRetry={() => void startRecording("guided_retry")}
-            onPlayBefore={()=>void audioRef.current.resolveRepresentative(`${session?.id}:${item?.id}`,"before").then(playUri)}
-            onPlayAfter={()=>void audioRef.current.resolveRepresentative(`${session?.id}:${item?.id}`,"after").then(playUri)}
+            onPlayBefore={()=>void audioRef.current.resolveRepresentative(userId,`${session?.id}:${item?.id}`,"before").then(playUri)}
+            onPlayAfter={()=>void audioRef.current.resolveRepresentative(userId,`${session?.id}:${item?.id}`,"after").then(playUri)}
+            onCompleteDay={()=>void enqueueCompletion()}
+            onAdditionalPractice={()=>{if(nextOptionalIndex!==null){setLocalIndex(nextOptionalIndex);setAttemptPurpose("initial");}}}
             onNext={() => void nextItem()}
           />
         ) : (
@@ -627,7 +722,8 @@ export function V2Experience({ apiBaseUrl, getAccessToken, userId, online }: {
       <View style={styles.tabs} accessibilityRole="tablist">
         {(["home", "practice", "settings"] as const).map((key) => (
           <Pressable key={key} accessibilityLabel={key === "home" ? "ホーム" : key === "practice" ? "練習" : "設定"}
-            accessibilityRole="tab" accessibilityState={{ selected: tab === key }} onPress={() => setTab(key)}
+            accessibilityRole="tab" accessibilityState={{ selected: tab === key,disabled:recordingState!=="ready" }}
+            disabled={recordingState!=="ready"} onPress={() => setTab(key)}
             style={[styles.tab, tab === key ? styles.selected : null]}>
             <Text style={tab === key ? styles.selectedText : styles.tabText}>
               {key === "home" ? "ホーム" : key === "practice" ? "練習" : "設定"}

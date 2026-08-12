@@ -17,8 +17,16 @@ export function canRequestAnotherTicket(rows, sessionItemId) {
 }
 
 export function nextRestoredPosition(session, resultsByItem) {
-  const pendingIndex = session.items.findIndex((item) => !resultsByItem[item.id]);
-  return pendingIndex < 0 ? Math.max(0, session.items.length - 1) : pendingIndex;
+  const requiredIndexes=session.items.map((item,index)=>item.required===true?index:-1).filter((index)=>index>=0);
+  const pendingRequired=requiredIndexes.find((index)=>!resultsByItem[session.items[index].id]);
+  if(pendingRequired!==undefined)return pendingRequired;
+  const optionalIndexes=session.items.map((item,index)=>item.required===false?index:-1).filter((index)=>index>=0);
+  const attemptedOptional=optionalIndexes.filter((index)=>Boolean(resultsByItem[session.items[index].id]));
+  if(attemptedOptional.length>0){
+    const pendingOptional=optionalIndexes.find((index)=>!resultsByItem[session.items[index].id]);
+    return pendingOptional??attemptedOptional.at(-1);
+  }
+  return requiredIndexes.at(-1)??0;
 }
 
 export function timeoutError(code = "REQUEST_TIMEOUT") {

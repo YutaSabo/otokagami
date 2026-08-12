@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 export type V2ManagedItem = {
   id: string;
@@ -8,6 +8,7 @@ export type V2ManagedItem = {
   expected_focus_representation: string;
   focus_group_key: string;
   status: string;
+  required?: boolean;
 };
 
 export type V2LocalResult = {
@@ -16,6 +17,7 @@ export type V2LocalResult = {
   resultLabel: string;
   nextActionKey: string | null;
   syncState: "pending" | "confirmed" | "permanent_failure";
+  technicalValid?: boolean;
 };
 
 export function V2PracticeShell({
@@ -28,12 +30,18 @@ export function V2PracticeShell({
   coachText,
   readOnlyReason,
   onPlayReference,
+  onPlayReferenceSlow,
   onStartRecording,
   onStopRecording,
   onGuidedRetry,
   onPlayBefore,
   onPlayAfter,
   guidedRetryAvailable = false,
+  remainingValidAttempts = 3,
+  completionAvailable = false,
+  additionalPracticeAvailable = false,
+  onCompleteDay,
+  onAdditionalPractice,
   onNext
 }: {
   item: V2ManagedItem | null;
@@ -45,12 +53,18 @@ export function V2PracticeShell({
   coachText?: string | null;
   readOnlyReason?: string | null;
   onPlayReference: () => void;
+  onPlayReferenceSlow?: () => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
   onGuidedRetry: () => void;
   onPlayBefore?:()=>void;
   onPlayAfter?:()=>void;
   guidedRetryAvailable?: boolean;
+  remainingValidAttempts?: number;
+  completionAvailable?: boolean;
+  additionalPracticeAvailable?: boolean;
+  onCompleteDay?: () => void;
+  onAdditionalPractice?: () => void;
   onNext: () => void;
 }) {
   if (readOnlyReason && !item) {
@@ -73,20 +87,23 @@ export function V2PracticeShell({
   }
   const busy = ["preparing", "normalizing"].includes(state);
   const recording = state === "recording";
-  const canAdvance = localResult?.syncState === "pending" || localResult?.syncState === "confirmed";
+  const canAdvance = localResult?.technicalValid === true &&
+    (localResult.syncState === "pending" || localResult.syncState === "confirmed");
   return (
-    <View style={styles.screen}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.screen}>
       <Text style={styles.kicker}>今日の音 /{item.expected_focus_representation}/</Text>
       <Text style={styles.counter}>{currentIndex + 1} / {totalItems}</Text>
       <Text accessibilityRole="header" style={styles.prompt}>{item.reference_text}</Text>
       <Text style={styles.focus}>焦点音 /{item.expected_focus_representation}/</Text>
       {readOnlyReason ? <Text style={styles.readOnlyBanner}>オフライン表示です。録音や学習状態の確定はできません。</Text> : null}
       <ActionButton
-        label="お手本を聞く"
+        label="標準のお手本を聞く"
         hint="この課題の標準音声を再生します"
         onPress={onPlayReference}
         secondary
       />
+      <ActionButton label="ゆっくりのお手本を聞く" hint="この課題のゆっくりした音声を再生します"
+        onPress={onPlayReferenceSlow??onPlayReference} secondary />
       {recording ? (
         <ActionButton label="停止して判定" hint="録音を停止して対象音を確認します" onPress={onStopRecording} />
       ) : (
@@ -121,6 +138,10 @@ export function V2PracticeShell({
                 ? "保存できませんでした。結果は端末で確認できます。"
                 : "端末に保存済み・同期待ち"}
           </Text>
+          <Text style={styles.syncText}>有効な判定の残り: {remainingValidAttempts}回</Text>
+          {!localResult.technicalValid ? (
+            <Text style={styles.readOnlyBanner}>録音を確認できませんでした。この結果では次へ進まず、再試行できます。</Text>
+          ) : null}
           {comparison?.before && comparison.after ? (
             <View style={styles.comparison} accessibilityLabel="修正前と再挑戦の比較">
               <Text style={styles.comparisonTitle}>修正前と再挑戦</Text>
@@ -139,15 +160,25 @@ export function V2PracticeShell({
               : "最初の判定の同期後に再挑戦できます"}
               onPress={onGuidedRetry} disabled={!guidedRetryAvailable} secondary />
           ) : null}
-          <ActionButton
-            label="次の課題へ"
-            hint={canAdvance ? "端末に保存した結果を保ったまま次の管理課題へ進みます" : "結果を確認後に次へ進めます"}
-            onPress={onNext}
-            disabled={!canAdvance && !readOnlyReason}
-          />
+          {completionAvailable ? (
+            <ActionButton label="今日を完了" hint="必須課題だけで今日の完了確認を送ります"
+              onPress={onCompleteDay??(()=>undefined)} disabled={!canAdvance} />
+          ) : null}
+          {additionalPracticeAvailable ? (
+            <ActionButton label="追加練習へ" hint="任意の追加課題へ進みます"
+              onPress={onAdditionalPractice??(()=>undefined)} disabled={!canAdvance} secondary />
+          ) : null}
+          {!completionAvailable ? (
+            <ActionButton
+              label="次の課題へ"
+              hint={canAdvance ? "端末に保存した結果を保ったまま次の管理課題へ進みます" : "有効な結果を確認後に次へ進めます"}
+              onPress={onNext}
+              disabled={!canAdvance}
+            />
+          ) : null}
         </View>
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -186,6 +217,7 @@ function readOnlyMessage(reason: string) {
 }
 
 const styles = StyleSheet.create({
+  scroll: { flex: 1, backgroundColor: "#f6f7f4" },
   screen: { flex: 1, gap: 16, padding: 22, backgroundColor: "#f6f7f4" },
   title: { color: "#0c6b58", fontSize: 17, fontWeight: "900" },
   statusTitle: { color: "#14212b", fontSize: 28, fontWeight: "900" },
