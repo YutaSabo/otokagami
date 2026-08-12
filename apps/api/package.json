@@ -6,9 +6,10 @@
     "dev": "next dev --port 3000",
     "prelint": "npm --workspace @pronunciation-mirror/core run build",
     "lint": "tsc --noEmit",
-    "pretest": "npm --workspace @pronunciation-mirror/core run build",
+    "pretest": "npm --workspace @pronunciation-mirror/core run build && npm run verify:validation-content",
     "test": "node --test tests/*.test.mjs",
-    "prebuild": "npm --workspace @pronunciation-mirror/core run build",
+    "prebuild": "npm --workspace @pronunciation-mirror/core run build && npm run verify:validation-content",
+    "verify:validation-content": "node ../../scripts/verify-validation-content.mjs",
     "build": "next build --webpack"
   },
   "dependencies": {

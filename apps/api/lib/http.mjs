@@ -5,6 +5,7 @@ export class ApiError extends Error {
     this.code = code;
     this.status = status;
     this.retryable = retryable;
+    this.disposition = retryable ? "retryable" : "permanent";
     this.details = details;
   }
 }
@@ -25,7 +26,8 @@ export function fail(error) {
       error: {
         code: apiError.code,
         message: apiError.message,
-        retryable: apiError.retryable
+        retryable: apiError.retryable,
+        disposition: apiError.disposition
       }
     },
     {

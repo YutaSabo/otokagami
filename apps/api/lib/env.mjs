@@ -33,6 +33,12 @@ export function getApiEnv(env = process.env, options = {}) {
     v2OutboxBackoffBaseSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_BACKOFF_BASE_SECONDS),
     v2OutboxBackoffMaxSeconds: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_OUTBOX_BACKOFF_MAX_SECONDS),
     v2ExportMaxBytes: parseOptionalPositiveInteger(env.OTOKAGAMI_V2_EXPORT_MAX_BYTES),
+    v2ValidationContentEnabled: env.OTOKAGAMI_V2_VALIDATION_CONTENT_ENABLED === "true",
+    v2ValidationTesterUserIds: parseUuidSet(env.OTOKAGAMI_V2_VALIDATION_TESTER_USER_IDS),
+    v2ValidationInstallationIds: parseNonEmptySet(env.OTOKAGAMI_V2_VALIDATION_INSTALLATION_IDS),
+    v2ValidationDevelopmentClientMarker: env.OTOKAGAMI_V2_VALIDATION_DEVELOPMENT_CLIENT_MARKER || null,
+    v2ValidationContentVersionId: parseOptionalUuid(env.OTOKAGAMI_V2_VALIDATION_CONTENT_VERSION_ID),
+    deploymentEnvironment: env.VERCEL_ENV ?? env.NODE_ENV ?? "unknown",
     freeTextDailySoftCap: Number(env.FREE_TEXT_DAILY_SOFT_CAP || 20),
     ttsSignedUrlTtlSeconds: Number(env.TTS_SIGNED_URL_TTL_SECONDS || 3600)
   };
@@ -60,6 +66,24 @@ export function getApiEnv(env = process.env, options = {}) {
   }
 
   return values;
+}
+
+function parseUuidSet(value) {
+  if (!value) return new Set();
+  return new Set(value.split(",").map((entry) => entry.trim()).filter((entry) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry)
+  ));
+}
+
+function parseNonEmptySet(value) {
+  if (!value) return new Set();
+  return new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean));
+}
+
+function parseOptionalUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
 }
 
 function parseOptionalPositiveInteger(value) {
