@@ -211,7 +211,7 @@ S6-08／Stage 7時点の保存境界は、Application SupportのSQLite outboxと
 
 ## 15. 未確認
 
-- Hosted SupabaseはS6-08 schemaまで適用・照合済み。S6-08.1補修schemaとvalidation DMLは未適用
+- Hosted SupabaseのS6-08.1補修schemaとvalidation-only教材1行は承認済み適用・照合済み。tester access追加、Preview接続、v2 mode変更は未実施
 - 実機Azureレイテンシと焦点群別安定性
 - RevenueCat sandbox商品・復元・webhook
 - S6-08.1／Stage 7.1 branch Preview、EAS Development Build、実機native storageの現在状態

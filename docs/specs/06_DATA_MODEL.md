@@ -299,9 +299,9 @@ S6-08では、user単位lock、deletion request ID、deletion epoch増加、v1/v
 
 現在DBには`daily_sessions`、`attempts`、`phoneme_state`、自由入力、ゲーミフィケーション、Piper/OpenAIキャッシュ等の旧概念がある。再利用・変換・無効化・削除の判断は第4段階以降で行う。
 
-`otokagami-staging`にはS6-08までのadditive v2 schemaが適用・前後照合済みで、v2 modeは`off`である。atomic export/deleteとlifecycle hardeningの定義はHostedへ存在するが、Hosted実ユーザーへのdelete RPCは実行していない。S6-08.1以降の補修migrationやvalidation-only DMLは未適用であり、確定SQL・hash・影響を示した個別承認が必要である。旧v1/legacy行はbackfillせず保持し、旧`Otokagami` projectは凍結する。
+`otokagami-staging`にはS6-08.1までのadditive v2 schemaと、隔離されたvalidation-only教材1行が承認済み適用・前後照合済みで、tester accessは0件、v2 modeは`off`である。atomic export/deleteとlifecycle hardeningの定義はHostedへ存在するが、Hosted実ユーザーへのdelete RPCは実行していない。後続DMLや環境変更は確定内容の個別承認を必要とする。旧v1/legacy行はbackfillせず保持し、旧`Otokagami` projectは凍結する。
 
-validation-only教材または結果を同じstaging DBへ置く場合は、公開contentとは別channel・固定release ID・tester/installation制限を持たせ、trial、durable evidence、正式reportへ混入しないことをDB/API両境界で検証する。validation rowの追加は外部DMLであり、件数・stable ID・内容・無効化方法を確定した別承認まで実行しない。
+validation-only教材または結果を同じstaging DBへ置く場合は、公開contentとは別channel・固定release ID・tester/installation制限を持たせ、trial、durable evidence、正式reportへ混入しないことをDB/API両境界で検証する。現在は承認済み教材行1件だけが存在し、tester accessは0件である。追加の教材・access行や結果DMLは、件数・stable ID・内容・無効化方法を確定した別承認まで実行しない。
 
 ## 17. TBD
 

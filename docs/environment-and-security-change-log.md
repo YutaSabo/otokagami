@@ -491,20 +491,21 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 - **対象端末・サービス**：macOS、Colima/Docker、Supabase CLI 2.112.0、専用Fresh local Supabase、S6-07 staging復元volumeの独立clone、npm workspace
 - **実施日時・最終確認日**：2026-08-12
 - **実施者**：ユーザー承認のもとCodex
-- **実施状況**：local補修、Fresh検証、最終staging clone upgrade rehearsal、自動コード検証まで完了。Hosted migration、validation DML、Preview環境保存、EAS Development Build、Azure実機fixture、iPhone受入は未実施であり、Stage 7.1は完成扱いしない。
-- **DB変更候補**：forward-only migration `20260812000000_harden_v2_device_validation.sql`（SHA-256 `ca9b815ea45a592918b029fa3b69e82f3fb00919a3a43445ee62564c564a19a1`）を作成した。ticket request冪等発行・回復・取消、録音開始／provider結果受信／送信時刻、review完了、delete epoch単調応答、append-only ledger、validation-only content／tester／installation隔離、validation session作成・完了RPCを追加する。既存適用済みmigrationは編集していない。Hostedには未適用。
+- **実施状況**：local補修、Fresh検証、最終staging clone upgrade rehearsal、自動コード検証、承認済みHosted migrationとvalidation-only教材1行の適用・照合まで完了。Preview環境保存、EAS Development Build、Azure実機fixture、iPhone受入は未実施であり、Stage 7.1は完成扱いしない。
+- **DB変更**：forward-only migration `20260812000000_harden_v2_device_validation.sql`（SHA-256 `ca9b815ea45a592918b029fa3b69e82f3fb00919a3a43445ee62564c564a19a1`）をHosted `otokagami-staging`へ単一transactionで適用した。ticket request冪等発行・回復・取消、録音開始／provider結果受信／送信時刻、review完了、delete epoch単調応答、append-only ledger、validation-only content／tester／installation隔離、validation session作成・完了RPCを追加した。既存適用済みmigrationは編集していない。
 - **Validation教材**：既存Seedの`light`、`right`、`I read it again.`だけから、`r-l`焦点の必須5・任意2課題を構成した。macOS組込み`Samantha`音声をofflineでstandard／slow各3件、合計6 WAVへ生成し、非無音、16-bit mono 16kHz、個別checksum、固定manifestを検査した。`development_validation`専用で、正式human review／Azure validation／active教材、公開104課題・208音声の完成数には含めない。runtime OpenAI／Piper／Pythonは使用しない。
 - **Fresh検証**：project ID `otokagami-s6081-fresh-final-20260812`、専用port `60620`〜`60629`で全migrationとSeedを適用した。Edge Runtimeのentrypoint不在によるhealth failureを記録したうえで、使い捨てstackだけ同serviceを除外して再開し、content Seed、既存・新RLS／schema／RPC／assessment／lifecycleのSQL 12件、attempt/deleteの両lock順、DB lintを成功させた。
 - **Upgrade rehearsal**：停止済みsource volume `supabase_db_oto-stage7-upgrade-r2-20260810`をread-only copy元とし、独立volume／container `supabase_db_oto-s6081-upgrade-r2-20260812`（port `60533`）へ複製した。最終migrationを単一transactionで適用し、Auth user 25件、既存38 public tableの全件数、既存65 policyのdefinition digest、legacy品質集計が不変であることを確認した。public tableはvalidation access tableの追加だけで39件、新tableは0件。新DB正負testも成功した。
+- **Hosted適用後照合**：ユーザーの直前承認後、上記hashのmigration 1件と、固定manifest SHA-256 `84a11917749840d0aca4fb8d096e1f4126d6f56aeca9d2aa0d7f67a713a3d26c`を持つ`development-validation-r-l` version 1の`content_versions`行1件だけをHosted `otokagami-staging`へ適用した。preflight／postflightは`BEGIN READ ONLY`、5秒timeout、`transaction_read_only=on`で実施し、Auth user 23件、既存38 tableのexact件数、policy 65件とdigest `2cac0fbcddfbb9f0d6300b6428912637`が不変だった。public tableはvalidation access tableの追加だけで39件となった。教材行は`draft`／`development_validation`／`validation_only=true`で、正式review／Azure validation／activation timestampはNULL、tester access 0件、validation session 0件である。保護RPC 8本はanon／authenticated実行権限0件、service-role実行権限8件を確認した。Hosted Seed、reset、backfill、実ユーザーデータ削除、v2 mode変更は行っていない。
 - **コード検証**：Core 51 test、API 69 test、Mobile 50 test、各lint／build、Core ESM import、通常Next.js build、Expo public config、root lint／build、validation asset検査が成功した。Python inference unittestは既存Python 3.14環境の`pydantic_core` native module欠損で1件ImportErrorとなり、成功扱いにしていない。新v2中心経路はPython runtimeへ依存しない。
 - **Mobile境界**：ticket request journal、current-user scope、最大3 valid attempt、必須5／任意0〜2、SQLite ACK後のprotected-material cleanup、再起動復元、offline read-only、atomic deletion barrier、export一時ファイルcleanup、reference／before／after音声lifecycleを実装した。iOS native compileはfull Xcodeがないため未完了で、file protection、backup除外、マイク、background、network復帰、実SQLite lockingはDevelopment Build実機確認待ち。
 - **保持中resource**：Fresh stackのDB／API関連containerとvolume、copy container `oto-s6081-volume-copy-r2-20260812`、upgrade clone DB container／volumeを削除せず停止状態で保持する。先行S6-01〜S6-08のcontainer、volume、backup、IPA、SQL Editor query、imageも削除していない。
-- **接続・外部境界**：Hosted `otokagami-staging`、旧`Otokagami`、Vercel環境変数、EAS、Azure、TestFlight、App Store、RevenueCat、Productionへは変更していない。branch pushに自動付随する非Production Preview以外の外部操作は、exact planと個別承認後に限る。
-- **想定されるリスク**：Hosted未適用、validation access用のDevelopment Build user／installation識別未確定、Production用payload／期限／timeout値未確定、iOS実機証拠未取得、停止container／volumeによるディスク消費、Python inference test環境不整合。
+- **接続・外部境界**：Production code／environment deploymentは行っていないが、稼働中DB `otokagami-staging`のschemaとvalidation-only教材1行には上記の承認済み変更がある。旧`Otokagami`、Vercel環境変数、EAS、Azure、TestFlight、App Store、RevenueCatは変更していない。v2 modeは`off`のままである。
+- **想定されるリスク**：validation tester accessが0件でPreview E2Eを開始できない、Development Build user／installation識別未確定、Production用payload／期限／timeout値未確定、iOS実機証拠未取得、停止container／volumeによるディスク消費、Python inference test環境不整合。
 - **リスクレベル**：中
 - **状態確認方法**：migration／manifest checksum、Fresh／clone SQL test、`docker ps -a`、`docker volume ls`、Core/API/Mobile check、Git diff、Preview/EAS/Azure/実機受入証拠を確認する。
 - **停止・削除・復旧手順**：今回の検証containerは停止済みで、削除は未実施。削除時は`otokagami-s6081`／`oto-s6081`識別子のcontainer、volume、一時ディレクトリを再列挙し、先行証拠資源と共有がないことを確認して別承認を得る。Hosted適用後のrollbackはv2／validation flagsを無効のまま保持し、新objectを未使用にしてv1を継続し、即dropしない。
-- **次回確認日**：Hosted／Preview／EAS／Azureの個別承認前
+- **次回確認日**：Preview環境保存／EAS／Azureの個別承認前
 
 ## 9. 要確認事項
 
@@ -520,7 +521,7 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 10. **ESC-015**：S6-05〜07のlocal／staging clone検証と承認済みHosted migration適用は完了し、v2 modeは`off`のまま。停止container 15件、volume 5件、関連image・一時ディレクトリは保持し、削除は別承認とする。
 11. **ESC-016**：S6-07 hardeningはlocal／staging clone検証と承認済みHosted適用まで完了し、v2 code／learningは未配布・未有効。provider attestation、製品policy、active教材は未実装・未設定。停止container 12件、volume 3件とColima 40GiB disk上限を保持し、削除・縮小は別承認とする。
 12. **ESC-017**：S6-07.1／S6-08はlocal／staging cloneで検証済みで、承認済みS6-08 Hosted schemaも適用・照合済み。Stage 7は実機Azure fixture、実機Mobile受入、v2 live設定が未完了であり、fixture・自動検証だけで完成扱いしない。停止container 12件、volume 4件、一時ディレクトリの削除は別承認とする。
-13. **ESC-018**：S6-08.1／Stage 7.1のlocal補修、validation-only教材、Fresh／clone検証は完了したが、Hosted、Preview環境、EAS、Azure、iPhone実機証拠は未実施。停止container／volumeの削除は別承認とする。
+13. **ESC-018**：S6-08.1／Stage 7.1のlocal補修、validation-only教材、Fresh／clone検証、承認済みHosted schemaと教材1行の適用・照合は完了。tester accessは0件、v2 modeは`off`で、Preview環境、EAS、Azure、iPhone実機証拠は未実施。停止container／volumeの削除は別承認とする。
 
 ### 調査範囲と制限
 
@@ -549,3 +550,4 @@ PC、OS、開発環境、外部サービスに対して行った変更のうち�
 | 2026-08-10 | ESC-017 | Codex | S6-07.1 normalizer/HTTP hardening、S6-08 atomic export/delete、Stage 7 Mobile/SQLite/audio基盤を実装。Fresh/clone双方で全SQL、RLS/RPC、attempt/delete並行収束を検証し、Auth 23件・既存36 table件数不変、新2 table 0件、Hosted未変更を確認した。12 container停止、4 volume保持、v2 mode `off`。 |
 | 2026-08-10 | ESC-017 | Codex | 直前承認後、確定hashのS6-08 migration 1件だけをHosted `otokagami-staging`へ適用。Auth 23件、既存36 table全件数、既存64 policy digestが不変、新2 table 0件、clientの保護RPC grant 0件を確認。実データ削除、v2有効化、Production code/env配信、旧project操作は未実施。 |
 | 2026-08-12 | ESC-018 | Codex | S6-08.1／Stage 7.1のticket/review/delete/epoch、validation-only教材、Mobile SQLite/outbox/audioを補修。最終Fresh migration・Seed・SQL 12件・DB lint・attempt/delete両lock順と独立clone upgradeを完了し、Auth 25件、既存38 table件数、65 policy digestの不変を確認。Hosted・Preview環境・EAS・Azure・実機受入は未実施。 |
+| 2026-08-12 | ESC-018 | Codex | 直前承認後、確定hashのS6-08.1 migration 1件とvalidation-only教材1行だけをHosted `otokagami-staging`へ単一transactionで適用。Auth 23件、既存38 table全exact件数、policy 65件/digest不変、tester access 0件、validation session 0件、保護RPCのclient実行0件を確認。実ユーザーデータ削除、v2有効化、Production code/env配信、旧project操作は未実施。 |

@@ -19,9 +19,9 @@
 | 項目 | 状態 | 根拠 |
 | --- | --- | --- |
 | 新製品方針の文書化 | 確認済み | マスター、仕様01〜10、Phase 13を新方針へ改訂 |
-| コード・DBの新仕様適合 | 一部確認済み | Core/API v2とS6-08 Hosted schemaは適用・照合済み。S6-08.1／Stage 7.1は補修・検証中で、実機証拠がないため完成扱いしない |
+| コード・DBの新仕様適合 | 一部確認済み | Core/API v2とS6-08.1 Hosted schema、隔離されたvalidation-only教材1行は適用・照合済み。Stage 7.1は実機証拠がないため完成扱いしない |
 | Todoist運用 | 一部確認済み | 現行Project概要とopen taskを開始時に再確認し、検証済みwork logだけを通常ルールで記録する。task作成・変更・完了は別権限 |
-| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08まで適用・照合済み。v2 modeは`off`で、実データ削除RPCは未実行 |
+| Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08.1まで適用・照合済み。validation tester accessは0件、v2 modeは`off`で、実データ削除RPCは未実行 |
 | 実機Azure | 未確認 | 有料API・実機操作を行っていない |
 | RevenueCat sandbox | 未確認 | 外部課金操作を行っていない |
 
@@ -73,7 +73,7 @@
 
 ## 6. コンテンツ
 
-第1段階のリポジトリ調査で確認された値である。Hosted schemaはS6-08まで確認済みだが、公開可能なv2教材は未準備である。
+第1段階のリポジトリ調査で確認された値である。Hosted schemaはS6-08.1まで確認済みで、validation-only教材1行は公開教材と分離されている。公開可能なv2教材は未準備である。
 
 | 項目 | 現在確認 | 新MVP最低 | 状態 |
 | --- | ---: | ---: | --- |
@@ -124,7 +124,7 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 | 実価格 | TBD |
 | sandbox購入・復元 | 未確認 |
 | webhookの新MVP統合 | 旧実装のみ確認済み |
-| Hosted Supabase schema/seed | S6-08 schemaまで適用・照合済み。Hosted Seedは実行していない |
+| Hosted Supabase schema/seed | S6-08.1 schemaとvalidation-only教材1行まで適用・照合済み。Hosted Seedは実行していない |
 | Vercel/Fly.io/Expo現在状態 | Vercel Productionはv2未配布。最新状態の再確認は次回外部操作前 |
 | App Store Connect/TestFlight現在状態 | Build 8/9接続先確認済み。新Mobile build未作成 |
 
@@ -142,4 +142,4 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 
 ## 11. 技術的完成状態
 
-S6-08 Hosted schemaは適用・照合済みである。S6-08.1／Stage 7.1は実機前の補修・validation-only統合準備中であり、fixtureや自動検証だけを`COMPLETE`または`code-complete`とは扱わない。branch Preview E2E、EAS Development Build、実Azure projection、iOS file protection/backup除外、microphone/background/network復帰、SQLite/audio/required・optional・invalid・ACK・export/deleteの実機証拠は未確認である。正式教材、Stage 8課金、PR review/merge、Production code/env deployment、App Store作業も未完了である。
+S6-08.1 Hosted schemaとvalidation-only教材1行は適用・照合済みである。tester accessは0件、v2 modeは`off`で、Stage 7.1は実機受入前である。fixtureや自動検証だけを`COMPLETE`または`code-complete`とは扱わない。branch Preview E2E、EAS Development Build、実Azure projection、iOS file protection/backup除外、microphone/background/network復帰、SQLite/audio/required・optional・invalid・ACK・export/deleteの実機証拠は未確認である。正式教材、Stage 8課金、PR review/merge、Production code/env deployment、App Store作業も未完了である。
