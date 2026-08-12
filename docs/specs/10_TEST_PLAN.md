@@ -214,6 +214,10 @@ S6-08以降はfresh DBとstaging復元cloneで、実装済みSQL/RPCの正負・
 
 Azureや有料APIの実接続は、費用と対象環境の明示承認後に行う。
 
+少量のvalidation-only教材によるsmokeは、Preview＋Development client＋tester制限下で、`native recording → Azure direct result → strict projection → SQLite enqueue → 即時主要表示 → server ACK`を確認する。fixture、自動テスト、SimulatorだけではStage 7完成証拠にしない。このsmokeはStage 9の複数話者・複数端末・公開教材検証を代替せず、validation教材を公開完成数へ加算しない。
+
+実機では少なくとも、required 5件とoptional 0/1/2件、invalid非計上、valid最大3回、ACK消失、app kill/reopen、user切替、offline復帰、background取消、before/afterとstandard/slow再生、export一時ファイル削除、offline delete再開、file欠損、SQLite/WAL/SHMを含むfile protection/backup除外を確認する。
+
 ## 12. 性能・安定性
 
 次は`実機検証目標`であり、正式な合格実績ではない。
@@ -277,3 +281,5 @@ Azureや有料APIの実接続は、費用と対象環境の明示承認後に行
 - 設計書と実装差分が解消または明示承認される。
 
 App Store申請、一般公開、Productionデプロイは技術的完成の外であり、別承認とする。
+
+S6-08.1／Stage 7.1については、local補修とfixture testだけを`COMPLETE`または`code-complete`と呼ばない。Hosted承認済みmigration、validation-only隔離、branch Preview E2E、EAS Development Build、実Azure projection、microphone/network/background/SQLite/audio/file protectionの実機証拠を個別に区別して記録する。

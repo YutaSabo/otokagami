@@ -1,7 +1,7 @@
 # Phase 13 新MVP準備状況
 
 > 文書状態: 現役の状態記録
-> 最終棚卸し: 2026-08-10（S6-07.1／S6-08／Stage 7 fixture-based code candidate）
+> 最終棚卸し: 2026-08-12（S6-08 Hosted適用後／S6-08.1・Stage 7.1実機前補修中）
 > 注意: 旧MVPの確認結果と、新MVPの準備状況を混同しない。
 
 ## 1. 状態ラベル
@@ -19,8 +19,8 @@
 | 項目 | 状態 | 根拠 |
 | --- | --- | --- |
 | 新製品方針の文書化 | 確認済み | マスター、仕様01〜10、Phase 13を新方針へ改訂 |
-| コード・DBの新仕様適合 | 一部確認済み | Core/API v2、S6-08 DB、Stage 7 Mobile候補は自動検証済み。Hosted S6-08 schemaも適用・照合済みだが、実機、教材、課金は未完了 |
-| Todoist再編 | 未実装 | 本件ではTodoist変更禁止 |
+| コード・DBの新仕様適合 | 一部確認済み | Core/API v2とS6-08 Hosted schemaは適用・照合済み。S6-08.1／Stage 7.1は補修・検証中で、実機証拠がないため完成扱いしない |
+| Todoist運用 | 一部確認済み | 現行Project概要とopen taskを開始時に再確認し、検証済みwork logだけを通常ルールで記録する。task作成・変更・完了は別権限 |
 | Hosted環境 | 一部確認済み | `otokagami-staging`はS6-08まで適用・照合済み。v2 modeは`off`で、実データ削除RPCは未実行 |
 | 実機Azure | 未確認 | 有料API・実機操作を行っていない |
 | RevenueCat sandbox | 未確認 | 外部課金操作を行っていない |
@@ -73,7 +73,7 @@
 
 ## 6. コンテンツ
 
-第1段階のリポジトリ調査で確認された値であり、Hosted Supabaseは未確認。
+第1段階のリポジトリ調査で確認された値である。Hosted schemaはS6-08まで確認済みだが、公開可能なv2教材は未準備である。
 
 | 項目 | 現在確認 | 新MVP最低 | 状態 |
 | --- | ---: | ---: | --- |
@@ -142,4 +142,4 @@ P95 3秒、技術成功率97〜98%等は実機検証目標候補であり、PASS
 
 ## 11. 技術的完成状態
 
-S6-07.1／S6-08とStage 7 Mobileは、fixture・local DB・staging復元cloneに基づくcode-complete candidateであり、S6-08 Hosted schemaは適用・照合済みである。実機Azure/Mobile、iOS file protection/backup除外、microphone/background/network復帰、教材、Stage 8課金、PR review/merge、Production code/env deployment、App Store作業は未完了である。
+S6-08 Hosted schemaは適用・照合済みである。S6-08.1／Stage 7.1は実機前の補修・validation-only統合準備中であり、fixtureや自動検証だけを`COMPLETE`または`code-complete`とは扱わない。branch Preview E2E、EAS Development Build、実Azure projection、iOS file protection/backup除外、microphone/background/network復帰、SQLite/audio/required・optional・invalid・ACK・export/deleteの実機証拠は未確認である。正式教材、Stage 8課金、PR review/merge、Production code/env deployment、App Store作業も未完了である。

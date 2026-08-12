@@ -134,8 +134,10 @@ P95 3秒、成功率等は現時点で`実機検証目標`。正式な合格値�
 - 環境をProductionと明確に分ける。
 - mobile、API、Supabase、RevenueCat sandboxの組み合わせを記録する。
 - 旧Python/OpenAI/Piper環境が存在しても、新MVP中心経路で呼ばれないことを確認する。
-- Hosted Supabaseの現状は接続確認まで未確認とする。
+- Hosted `otokagami-staging`はS6-08 schemaまで適用・照合済み。後続migrationやvalidation DMLは、確定内容の個別承認前は未適用として扱う。
 - Vercel Previewが自動作成されても、Production承認にはならない。
+- validation-only教材を使う場合は、branch Preview、Development client、server-only flag、exact release ID、tester/installation制限をすべて要求し、Production/public contentへのfallbackを禁止する。
+- validation-only教材と実機smokeは公開教材104件・音声208件・助言21件・図解8件の完成数へ含めない。
 
 ## 9. 完了条件
 
@@ -150,6 +152,7 @@ P95 3秒、成功率等は現時点で`実機検証目標`。正式な合格値�
 - [ ] 音声非保存、端末保持、export/delete、RLS、秘密境界が確認済み。
 - [ ] 未達の性能値をPASSと記録していない。
 - [ ] App Store申請、一般公開、Productionへ進んでいない。
+- [ ] Stage 7をfixtureや自動テストだけで`COMPLETE`または`code-complete`と記録していない。
 
 ## 10. 証拠の記録
 
